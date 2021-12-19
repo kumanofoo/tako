@@ -64,6 +64,9 @@ def test_order_and_latest_transaction(db):
         "quantity_in_stock": 0,
         "sales": 0,
         "status": "ordered",
+        "area": "apple",
+        "max_sales": 0,
+        "weather": ""
     }
     tc = TakoClient(my_id, my_name)
 
@@ -78,6 +81,8 @@ def test_order_and_latest_transaction(db):
             assert re.match(
                 r"\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d\.\d\d\d",
                 transaction[key])
+        elif key == "area":
+            assert len(transaction[key]) > 0
         else:
             assert transaction[key] == expected[key]
 
@@ -90,6 +95,8 @@ def test_order_and_latest_transaction(db):
             assert re.match(
                 r"\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d\.\d\d\d",
                 transaction[key])
+        elif key == "area":
+            assert len(transaction[key]) > 0
         else:
             assert transaction[key] == expected[key]
 
@@ -102,5 +109,7 @@ def test_order_and_latest_transaction(db):
             assert re.match(
                 r"\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d\.\d\d\d",
                 transaction[key])
+        elif key == "area":
+            assert len(transaction[key]) > 0
         else:
             assert transaction[key] == expected[key]

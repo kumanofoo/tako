@@ -611,13 +611,18 @@ class TakoMarket:
                     tra.quantity_in_stock,
                     tra.sales,
                     tra.status,
-                    tra.timestamp
+                    tra.timestamp,
+                    s.area,
+                    s.sales,
+                    s.weather
                 FROM
                     tako t
                 INNER JOIN
                     accounts a ON t.owner_id = a.owner_id
                 INNER JOIN
                     tako_transaction tra ON t.owner_id = tra.owner_id
+                INNER JOIN
+                    shop s ON tra.transaction_date = s.date_jst
                 WHERE
                     t.owner_id = ?
                 """,
@@ -628,14 +633,14 @@ class TakoMarket:
                 ["owner_id", "name", "balance",
                  "date", "quantity_ordered", "cost",
                  "quantity_in_stock", "sales",
-                 "status", "timestamp"],
+                 "status", "timestamp", "area", "max_sales", "weather"],
                 r)) for r in rows if r[3] == date]
         else:
             ret = [dict(zip(
                 ["owner_id", "name", "balance",
                  "date", "quantity_ordered", "cost",
                  "quantity_in_stock", "sales",
-                 "status", "timestamp"],
+                 "status", "timestamp", "area", "max_sales", "weather"],
                 r)) for r in rows]
         return ret
 

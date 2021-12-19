@@ -183,6 +183,8 @@ class TakoCommand(TakoClient):
             if quantity >= 0 and quantity <= max_quantity:
                 if self.order(quantity):
                     print(f"Ordered {quantity} tako")
+        elif cmd == "history":
+            self.history()
         elif cmd == "help" or cmd == "?":
             self.help()
         elif cmd == "quit":
@@ -231,6 +233,31 @@ class TakoCommand(TakoClient):
             if transaction["status"] == "canceled":
                 print(f"Status: canceled '{transaction['date']}'"
                       f" at {ts_str}")
+
+    def history(self, number=None, reverse=True):
+        """Show transaction history
+        """
+        transactions = TakoMarket.get_transaction(self.my_id)
+
+        print("Date       Area     weather "
+              "Ordered In stock Sales/max   Status  ")
+        print("-"*66)
+        for n, t in enumerate(sorted(transactions,
+                              key=lambda x: x["date"],
+                              reverse=reverse)):
+            if n == number:
+                break
+            area = t["area"] + "　"*(4-len(t["area"]))
+            print("%s %4s %-7s %7d %8d %5d/%-5d %-8s" % (
+                    t['date'],
+                    area,
+                    t['weather'],
+                    t['quantity_ordered'],
+                    t['quantity_in_stock'],
+                    t['sales']/takoconfig.SELLING_PRICE,
+                    t['max_sales'],
+                    t['status']))
+        print("-"*66)
 
     def top3(self):
         """Show top 3 owners
