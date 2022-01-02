@@ -4,13 +4,14 @@ import threading
 import time
 import logging
 import signal
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from tako.takomarket import TakoMarket
 from tako.takoclient import TakoClient
+from tako import takoconfig
+from tako.takoconfig import TAKOBOT
+from tako.takotime import JST
 
 log = logging.getLogger(__name__)
-
-JST = timezone(timedelta(hours=+9), 'JST')
 
 
 class Takobot(TakoClient):
@@ -28,6 +29,17 @@ class Takobot(TakoClient):
         "雨",
         "雪",
     ]
+
+    def __init__(self, bot_id=TAKOBOT["ID"], bot_name=TAKOBOT["name"]):
+        """Initialize bot ID and name
+
+        Parameters
+        ----------
+        bot_id : str
+        bot_name : str
+        """
+        self.stop = threading.Event()
+        super().__init__(bot_id, bot_name)
 
     def how_many_order(self):
         """Calculate how many Tako order.
@@ -54,7 +66,7 @@ class Takobot(TakoClient):
         """
         self.bot_state = "running"
         log.debug("Tako Bot is running.")
-        while not self.finish.is_set():
+        while not self.stop.is_set():
             next_area = TakoMarket.get_next_area()
             opening_time = next_area["opening_datetime"]
             if opening_time is None:
@@ -78,39 +90,39 @@ class Takobot(TakoClient):
                 wait = 60*60
                 log.debug("no next market")
             log.debug(f"set wake up timer for {int(wait/60)} minutes...")
-            self.finish.wait(wait)
+            self.stop.wait(wait)
 
     def run_bot(self):
         """Run a Tako Bot
-            Use finish_bot() To the Tako Bot
+            Use stop_bot() To stop the Tako Bot
         """
-        self.finish = threading.Event()
         self.bot_thread = threading.Thread(target=self.bot)
         self.bot_state = "initializeing"
         log.debug("Tako Bot is starting...")
         self.bot_thread.start()
 
-    def finish_bot(self):
-        """Finish Tako Bot
+    def stop_bot(self):
+        """Stop Tako Bot
         """
-        self.finish.set()
+        self.stop.set()
         self.bot_thread.join()
         log.debug("Tako Bot has stoped.")
         self.bot_state = "runnable"
-        self.finish.clear()
+        self.stop.clear()
 
     def signal_handlar(self, signum, frame):
-        """Signal handlar for finishing Takobot's therad.
+        """Signal handlar for stoping Takobot's therad.
         """
         signame = signal.Signals(signum).name
         log.debug(f"signal handlar received {signame}.")
-        self.finish_bot()
+        self.stop_bot()
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
+    global log
+    log = takoconfig.set_logging_level("TAKOBOT_DEBUG", "takobot")
 
-    tako = Takobot("MS-06S", "Char")
+    tako = Takobot()
     for sig in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:
         signal.signal(sig, tako.signal_handlar)
 
@@ -125,13 +137,6 @@ def main():
     transaction = tako.latest_transaction()
     print("----- transaction -----")
     print(transaction)
-
-    # print(tako.max_order_quantity())
-    # print(TakoMarket.condition_all())
-    # print(tako.ranking())
-    # print(f"I will make {tako.how_many_order()} tako.")
-    # tako.get_weather_forecast("むつ")
-    # print(tako.how_many_make("晴れ", "10%"))
 
 
 if __name__ == "__main__":

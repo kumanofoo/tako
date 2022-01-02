@@ -11,11 +11,9 @@ import signal
 import logging
 from tako import takoconfig, jma, names
 from tako.takotime import TakoTime as tt
-
+from tako.takotime import JST
 
 log = logging.getLogger(__name__)
-
-JST = timezone(timedelta(hours=9))
 
 
 class TakoMarketError(Exception):
@@ -48,8 +46,8 @@ class TakoMarket:
         (date, opeinig_datetime, closing_datetime)
     scheduler_state : str
         The state of scheduler thread
-    finish : str
-        The flag of finishing scheduler thread
+    stop : str
+        The flag of stoping scheduler thread
     """
     def __init__(self):
         """Initialize each attributes and database
@@ -62,7 +60,7 @@ class TakoMarket:
         self.closing_time = takoconfig.CLOSING_TIME
         self.next_event = None
         self.scheduler_state = "rannable"
-        self.finish = False
+        self.stop = False
 
         with sqlite3.connect(self.dbfile) as conn:
             conn.execute(
@@ -698,7 +696,7 @@ class TakoMarket:
 
         self.scheduler_state = "running"
         log.debug("scheduler is running.")
-        while not self.finish or onetime:
+        while not self.stop or onetime:
             now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             if now == self.next_event["opening_datetime"]:
                 if not open_done:
@@ -737,6 +735,8 @@ class TakoMarket:
                         self.next_event = self.get_next_event()
                         if not self.next_event["date"]:
                             raise TakoMarketError("can't get a next event")
+                        log.debug("Next area is "
+                                  f"{self.get_next_area()['area']}")
             else:
                 closed_done = False
             if onetime:
@@ -745,19 +745,19 @@ class TakoMarket:
 
     def run_market(self):
         """Run a sheduler of market
-          Use finish_market() To the scheduler
+          Use stop_market() To the scheduler
         """
-        self.finish = False
+        self.stop = False
         self.market_thread = threading.Thread(
             target=self.schedule)
         self.scheduler_state = "initializing"
         log.debug("scheduler is starting...")
         self.market_thread.start()
 
-    def finish_market(self):
-        """finish the scheduler of market
+    def stop_market(self):
+        """stop the scheduler of market
         """
-        self.finish = True
+        self.stop = True
         self.market_thread.join()
         log.debug("scheduler has stoped.")
         self.scheduler_state = "runnable"
@@ -773,7 +773,7 @@ class TakoMarket:
         """
         signame = signal.Signals(signum).name
         log.debug(f"signal handlar received {signame}.")
-        self.finish_market()
+        self.stop_market()
 
     def get_point(self):
         """Get a weather observing station at random
@@ -911,6 +911,63 @@ class TakoMarket:
             return ret
 
     @staticmethod
+    def get_area_history():
+        """Get history of areas (descending order)
+
+        Returns
+        -------
+        list of dict
+            "date",
+            "area",
+            "opening_datetime",
+            "closing_datetime",
+            "cost_price",
+            "selling_price",
+            "seed_money",
+            "status",
+            "sales",
+            "weather",
+            "timestamp"
+
+            If not exist, return None
+        """
+        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
+            rows = list(conn.execute(
+                """
+                SELECT
+                    *
+                FROM
+                    shop
+                ORDER BY
+                    date_jst DESC
+                """))
+            if len(rows) == 0:
+                return None
+            areas = []
+            for r in rows:
+                area = dict(zip(
+                    [
+                        "date",
+                        "area",
+                        "opening_datetime",
+                        "closing_datetime",
+                        "cost_price",
+                        "selling_price",
+                        "seed_money",
+                        "status",
+                        "sales",
+                        "weather",
+                        "timestamp"
+                    ],
+                    r))
+                area["opening_datetime"] = datetime.fromisoformat(
+                    area["opening_datetime"]+"+00:00")
+                area["closing_datetime"] = datetime.fromisoformat(
+                    area["closing_datetime"]+"+00:00")
+                areas.append(area)
+            return areas
+
+    @staticmethod
     def get_next_area():
         """Get next area of market
 
@@ -921,9 +978,6 @@ class TakoMarket:
             "area",
             "opening_datetime",
             "closing_datetime",
-            "cost_price",
-            "selling_price",
-            "seed_money",
             "status",
             "sales",
             "weather",
@@ -974,7 +1028,8 @@ class TakoMarket:
                 ret["closing_datetime"]+"+00:00")
             return ret
 
-    def get_next_event(self, now=None):
+    @staticmethod
+    def get_next_event(now=None):
         """Get datetime of next event
 
         Parameters
@@ -994,7 +1049,7 @@ class TakoMarket:
         if now is None:
             now = datetime.now(timezone.utc)
         now_str = now.isoformat()
-        with sqlite3.connect(self.dbfile) as conn:
+        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
             rows = list(conn.execute(
                 """
                 SELECT
@@ -1080,6 +1135,13 @@ class TakoMarket:
         today_sales = int(takoconfig.MAX_SALES['cloudy']
                           + takoconfig.MAX_SALES['sunny']*sunshine_ratio
                           + takoconfig.MAX_SALES['rainy']*rainfall_ratio)
+        log.info(f"sunshine_hour: {w['sunshine_hour']}, "
+                 f"day_length_hour: {w['day_length_hour']}, "
+                 f"sunshine_ratio: {sunshine_ratio}, "
+                 f"rainfall_max_mm: {rainfall_max_mm}, "
+                 f"rainfall_mm: {w['rainfall_mm']}, "
+                 f"rainfall_ratio: {rainfall_ratio}, "
+                 f"today_sales: {today_sales}")
         return (today_sales, w['weather'])
 
     def weather(self):
@@ -1139,23 +1201,10 @@ class TakoMarket:
 def tako_server():
     """Run Tako server
     """
-    import os
     import argparse
 
     global log
-    log = logging.getLogger('tako_server')
-    TAKOMARKET_DEBUG = os.environ.get("TAKOMARKET_DEBUG")
-    if TAKOMARKET_DEBUG == "info":
-        log_level = logging.INFO
-        formatter = '%(name)s: %(message)s'
-    elif TAKOMARKET_DEBUG == "debug":
-        log_level = logging.DEBUG
-        formatter = '%(asctime)s %(name)s[%(lineno)s] ' \
-                    '%(levelname)s: %(message)s'
-    else:
-        log_level = logging.WARNING  # default debug level
-        formatter = '%(name)s: %(message)s'
-    logging.basicConfig(level=log_level, format=formatter)
+    log = takoconfig.set_logging_level("TAKOMARKET_DEBUG", "tako_server")
 
     parser = argparse.ArgumentParser(description="Takoyaki Market")
     parser.add_argument("-d", "--daemon", action="store_true")

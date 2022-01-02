@@ -3,10 +3,11 @@
 from datetime import datetime, timedelta, time, timezone
 
 
-class TakoTime:
-    JST = timezone(timedelta(hours=9))
-    UTC = timezone.utc
+JST = timezone(timedelta(hours=9))
+UTC = timezone.utc
 
+
+class TakoTime:
     @staticmethod
     def date_with_tz(date_str=None, utc_offset=0):
         """Transform string date into datetime as JST
@@ -50,7 +51,7 @@ class TakoTime:
         """
         if not dt.tzinfo:
             return None
-        utc = dt.astimezone(TakoTime.UTC)
+        utc = dt.astimezone(UTC)
         utc_str = utc.strftime("%Y-%m-%dT%H:%M:%S")
         return utc_str
 
@@ -74,16 +75,16 @@ class TakoTime:
 
 def _test():
     expect_jst = datetime(2021, 10, 1, 0, 0, 0)
-    expect_jst = expect_jst.replace(tzinfo=TakoTime.JST)
+    expect_jst = expect_jst.replace(tzinfo=JST)
     assert expect_jst == TakoTime.date_with_tz("2021-10-01", utc_offset=9)
 
-    expect_today_jst = datetime.now(TakoTime.JST)
+    expect_today_jst = datetime.now(JST)
     expect_today_jst_str = expect_today_jst.strftime("%Y-%m-%d 00:00:00 +0900")
     actual_today_jst = TakoTime.date_with_tz(utc_offset=9)
     actual_today_jst_str = actual_today_jst.strftime("%Y-%m-%d %H:%M:%S %z")
     assert expect_today_jst_str == actual_today_jst_str
 
-    expect_today_utc = datetime.now(TakoTime.UTC)
+    expect_today_utc = datetime.now(UTC)
     expect_today_utc_str = expect_today_utc.strftime("%Y-%m-%d 00:00:00 +0000")
     actual_today_utc = TakoTime.date_with_tz()
     actual_today_utc_str = actual_today_utc.strftime("%Y-%m-%d %H:%M:%S %z")

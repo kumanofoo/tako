@@ -5,6 +5,8 @@ import random
 import logging
 import freezegun
 import pytest
+import tempfile
+from pathlib import Path
 from tako.takomarket import TakoMarket
 from tako.takomarket import TakoMarketNoAccountError, TakoMarketError
 from tako import takoconfig
@@ -247,7 +249,7 @@ class TakoMarketTest:
                         time.sleep(2)
                         continue
                     if t[3] == "shutdown":
-                        self.mk.finish_market()
+                        self.mk.stop_market()
                         time.sleep(2)
                         continue
                     if t[3] == "order":
@@ -276,7 +278,7 @@ class TakoMarketTest:
                         time.sleep(2)
                     if t[3] in ("open", "close"):
                         self.show_transaction()
-            self.mk.finish_market()
+            self.mk.stop_market()
 
 
 class TextColor:
@@ -294,6 +296,34 @@ class TextColor:
     UNDERLINE = "\033[4m"
     INVISIBLE = "\033[08m"
     REVERSE = "\033[07m"
+
+
+@pytest.fixture
+def tmpdb():
+    global tempdir
+    tempdir = tempfile.TemporaryDirectory()
+    takoconfig.TAKO_DB = str(Path(tempdir.name) / "tako_storage.db")
+
+
+def test_get_area_history(tmpdb):
+    date_pattern = [
+        "1971-01-01",
+        "1970-02-02",
+        "1970-02-01",
+        "1971-02-02",
+        "1970-01-01",
+    ]
+    tm = TakoMarket()
+
+    area_history = tm.get_area_history()
+    assert area_history is None
+
+    for d in date_pattern:
+        tm.set_area(d)
+    area_history = tm.get_area_history()
+    assert len(area_history) == len(date_pattern)
+    for h, d in zip(area_history, sorted(date_pattern, reverse=True)):
+        assert h["date"] == d, f"{area_history}\n{date_pattern}"
 
 
 def test_takomarket():
