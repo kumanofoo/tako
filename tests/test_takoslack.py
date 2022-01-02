@@ -1,6 +1,5 @@
 import pytest
 from datetime import datetime, timezone, timedelta
-from tako.takoslack import News
 UTC = timezone.utc
 JST = timezone(timedelta(hours=+9))
 
@@ -64,8 +63,12 @@ check_market_parameters = [
 ]
 
 
+@pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
+                    "os.environ.get('SLACK_BOT_TOKEN') is None",
+                    reason="Need environment variables of Slack")
 @pytest.mark.parametrize("param, init, expected", check_market_parameters)
 def test_check_market(mocker, param, init, expected):
+    from tako.takoslack import News
     create_text_mock = mocker.patch("tako.takoslack.News.create_text")
     area_history = parameter_maker(param)
     mocker.patch(
@@ -99,9 +102,13 @@ publish_parameters = [
 ]
 
 
+@pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
+                    "os.environ.get('SLACK_BOT_TOKEN') is None",
+                    reason="Need environment variables of Slack")
 @pytest.mark.freeze_time(datetime(2021, 10, 10, tzinfo=JST))
 @pytest.mark.parametrize("param, expected", publish_parameters)
 def test_create_text(mocker, param, expected):
+    from tako.takoslack import News
     condition_all = [
         {"name": "Three", "balance": 3000},
         {"name": "One", "balance": 1000},
@@ -114,8 +121,3 @@ def test_create_text(mocker, param, expected):
     news = News()
     area = parameter_maker([param])
     assert news.create_text(area[0]) == expected
-
-
-if __name__ == "__main__":
-    #print(polling_parameters)
-    parameter_maker([("2021-10-10", "Apple", "comming_soon", 0, "")])
