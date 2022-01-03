@@ -326,7 +326,35 @@ def test_get_area_history(tmpdb):
         assert h["date"] == d, f"{area_history}\n{date_pattern}"
 
 
-def test_takomarket():
+def test_takomarket(mocker):
+    mocker.patch("tako.takomarket.TakoMarket.get_point",
+                 side_effect=["One", "Two", "Three", "Four",
+                              "Five", "Six", "Seven", "Nine", "Ten",
+                              "Eleven", "Twelve"])
+    mocker.patch("tako.takomarket.TakoMarket.weather",
+                 side_effect=[
+                     {
+                         "title": "weather news one",
+                         "sunshine_hour": 6.5,
+                         "rainfall_mm": 10,
+                         "day_length_hour": 13.1,
+                         "weather": "cloudy",
+                     },
+                     {
+                         "title": "weather news two",
+                         "sunshine_hour": 0.5,
+                         "rainfall_mm": 30,
+                         "day_length_hour": 10.2,
+                         "weather": "Rainy",
+                     },
+                     {
+                         "title": "weather news three",
+                         "sunshine_hour": 8.5,
+                         "rainfall_mm": 0,
+                         "day_length_hour": 9.2,
+                         "weather": "Sunny",
+                     }
+                 ])
     logging.basicConfig(level=logging.DEBUG)
 
     number_of_accounts = 5

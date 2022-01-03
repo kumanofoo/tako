@@ -719,10 +719,15 @@ class TakoMarket:
 
             if now == self.next_event["closing_datetime"]:
                 if not closed_done:
+                    self.cancel_and_refund(self.next_event["date"])
+                    try:
+                        today_sales, weather = self.total_up_sales()
+                    except ValueError:
+                        log.waring("can't get weather data")
+                        time.sleep(15)
+                        continue
                     area = self.get_area(self.next_event["date"])["area"]
                     log.debug(f"Now close in {area}")
-                    self.cancel_and_refund(self.next_event["date"])
-                    today_sales, weather = self.total_up_sales()
                     self.result(self.next_event["date"], today_sales)
                     self.log_weather(now, weather)
                     log.debug(
