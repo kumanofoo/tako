@@ -384,6 +384,7 @@ class TakoSlackBot():
         self.exit_loop = Event()
         self.bot_thrad = None
         self.bot_state = "runnable"
+        self.interval_of_checking_news_sec = 60*30
 
     def send_message(self, text):
         """Send message to Slack
@@ -401,7 +402,7 @@ class TakoSlackBot():
         except BoltError as err:
             log.warning(f"can't send message: {err}")
 
-    def bot(self, interval_of_checking_nows=60):
+    def bot(self):
         """Start to run slack bot
             Stop bot to send SIGTERM
         """
@@ -419,15 +420,21 @@ class TakoSlackBot():
                 if news:
                     for n in news.check_market():
                         self.send_message(n)
-                self.exit_loop.wait(interval_of_checking_nows)
+                self.exit_loop.wait(self.interval_of_checking_news_sec)
         finally:
             slack_handler.close()
             log.info("Slack Bot stopped.")
 
-    def run_bot(self):
+    def run_bot(self, interval_of_checking_news_sec=None):
         """Run Takoyaki Slack Bot
             Use stop_bot to stop the Slack bot
+
+        Parameters
+        ----------
+        interval_of_checking_news_sec : int
         """
+        if interval_of_checking_news_sec:
+            self.interval_of_checking_news_sec = interval_of_checking_news_sec
         self.bot_state = "initializeing"
         self.bot_thread = threading.Thread(target=self.bot)
         self.bot_thread.start()
