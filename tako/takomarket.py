@@ -687,16 +687,28 @@ class TakoMarket:
         open_done = False
         closed_done = False
         self.next_event = self.get_next_event()
-        if not self.next_event["date"]:
+        while not self.next_event["date"] and not self.stop and not onetime:
+            log.warning("next event not found")
             self.set_area()
             self.next_event = self.get_next_event()
-            if not self.next_event["date"]:
-                raise TakoMarketError("can't get a next event")
+            time.sleep(30)
+
         self.cancel_and_refund(self.next_event["date"])
 
         self.scheduler_state = "running"
         log.debug("scheduler is running.")
         while not self.stop or onetime:
+            self.next_event = self.get_next_event()
+            if not self.next_event["date"]:
+                self.set_area()
+                self.next_event = self.get_next_event()
+                if not self.next_event["date"]:
+                    log.warning("next event not found")
+                    time.sleep(60)
+                    continue
+                else:
+                    log.debug(f"Next area is {self.get_next_area()['area']}")
+
             now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
             if now == self.next_event["opening_datetime"]:
                 if not open_done:
@@ -707,13 +719,6 @@ class TakoMarket:
                     self.set_area()
                     log.debug(f"Next area is {self.get_next_area()['area']}")
                     open_done = True
-
-                    self.next_event = self.get_next_event()
-                    if not self.next_event["date"]:
-                        self.set_area()
-                        self.next_event = self.get_next_event()
-                        if not self.next_event["date"]:
-                            raise TakoMarketError("can't get a next event")
             else:
                 open_done = False
 
@@ -722,10 +727,11 @@ class TakoMarket:
                     self.cancel_and_refund(self.next_event["date"])
                     try:
                         today_sales, weather = self.total_up_sales()
-                    except ValueError:
-                        log.waring("can't get weather data")
+                    except jma.JmaError as e:
+                        log.waring(f"can't get weather data: {e}")
                         time.sleep(15)
                         continue
+
                     area = self.get_area(self.next_event["date"])["area"]
                     log.debug(f"Now close in {area}")
                     self.result(self.next_event["date"], today_sales)
@@ -733,15 +739,6 @@ class TakoMarket:
                     log.debug(
                         f"today_sales: {today_sales}, weather: {weather}")
                     closed_done = True
-
-                    self.next_event = self.get_next_event()
-                    if not self.next_event["date"]:
-                        self.set_area()
-                        self.next_event = self.get_next_event()
-                        if not self.next_event["date"]:
-                            raise TakoMarketError("can't get a next event")
-                        log.debug("Next area is "
-                                  f"{self.get_next_area()['area']}")
             else:
                 closed_done = False
             if onetime:
@@ -823,7 +820,11 @@ class TakoMarket:
 
         opening_datetime_utc_str = tt.as_utc_str(opening_datetime_tz)
         closing_datetime_utc_str = tt.as_utc_str(closing_datetime_tz)
-        area = self.get_point()
+        try:
+            area = self.get_point()
+        except jma.JmaError as e:
+            log.warning(f"can't get a pint of weather station: {e}")
+            return
 
         with sqlite3.connect(self.dbfile) as conn:
             conn.execute(
@@ -1127,7 +1128,8 @@ class TakoMarket:
 
         Returns
         -------
-            (Today's sales, weather) : (int, str)
+            (Today's sales, weather) : (int, str) or None
+                                       Return None if can't get weather.
         """
         w = self.weather()
         sunshine_ratio = min(
@@ -1154,7 +1156,7 @@ class TakoMarket:
 
         Returns
         -------
-            weather : dict
+            weather : dict or None
                       {
                           "title": str,
                           "sunshine_hour": float,
@@ -1162,6 +1164,7 @@ class TakoMarket:
                           "day_length_hour": float,
                           "weather": str
                       }
+                      Return None if can't get SYNOP weather data.
         """
         self.today_point = self.get_area()["area"]
         now = jma.Synop.synopday(point=self.today_point)

@@ -85,11 +85,20 @@ class Synop:
                     ****Synop.SYNOPDAY_LABELS****
                 }
             }
+
+        Raises
+        ------
+        JmaError
+            If can't get SYNOP data.
         """
         daily_weather_observations = {}
         daily_weather_observations["data"] = {}
 
-        r = requests.get(Synop.SYNOPDAY_URL)
+        try:
+            r = requests.get(Synop.SYNOPDAY_URL)
+            r.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise JmaError(f"can't get SYNOP data: {e}")
         soup = BeautifulSoup(r.content, "html.parser")
         div_main = soup.find_all("div", attrs={"id": "main"})[0]
         title = div_main.find_all("div")[0].text
@@ -130,11 +139,19 @@ class Synop:
         Returns
         -------
         points : str list
+
+        Raises
+        ------
+        JmaError
+            If can't get SYNOP data.
         """
         points = []
 
         for _ in range(retry):
-            r = requests.get(Synop.SYNOPDAY_URL)
+            try:
+                r = requests.get(Synop.SYNOPDAY_URL)
+            except requests.exceptions.RequestException as e:
+                raise JmaError(f"can't get SYNOP data: {e}")
             soup = BeautifulSoup(r.content, "html.parser")
             div_mains = soup.find_all("div", attrs={"id": "main"})
             if len(div_mains) > 0:
@@ -232,6 +249,11 @@ class Forecast:
                 "pops": list of tupple (str, str)
                       [(time, Probability of Precipitation),...]
             }
+
+        Raises
+        ------
+        JmaError
+            If can't get forecast.
         """
         now = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
         today = dt.datetime(
@@ -246,7 +268,11 @@ class Forecast:
             forecast_date = today
 
         office = Forecast.get_office_code(class10s)
-        r = requests.get(f"{Forecast.FORECAST_URL}/{office}.json")
+        try:
+            r = requests.get(f"{Forecast.FORECAST_URL}/{office}.json")
+            r.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise JmaError(f"can't get forecast: {e}")
         data = json.loads(r.content)
 
         area_index = None

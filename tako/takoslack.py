@@ -217,8 +217,11 @@ class TakoSlack(TakoClient):
             closing_time_str = self.astimezone(area['closing_datetime'], tz=tz)
             messages.append(f"  Open: {opening_time_str}")
             messages.append(f"  Close: {closing_time_str}")
-            forecast = self.get_weather_forecast(area["area"])
-            messages.extend(["  "+m for m in forecast])
+            try:
+                forecast = self.get_weather_forecast(area["area"])
+                messages.extend(["  "+m for m in forecast])
+            except jma.JmaError as e:
+                log.warning(f"can't get weather forecast: {e}")
 
         return messages
 
@@ -269,7 +272,7 @@ class News:
         """
         self.closed_news_expiration_days = closed_news_expiration_days
         self.open_news_expiration_hours = open_news_expiration_hours
-        self.news = {}
+        self.news = []
 
     def check_market(self):
         """Check Takoyaki market
@@ -285,27 +288,36 @@ class News:
             log.debug("no news")
             return
 
-        if self.news == {}:
+        if len(self.news) == 0:
             latest = news[0:1]
             log.debug("Has got first news")
         else:
-            latest = [n for n in news if n["date"] >= self.news["date"]]
+            oldest_date = min(n["date"] for n in self.news)
+            latest = [n for n in news if n["date"] >= oldest_date]
 
         log.debug(f"latest: {latest}")
         for n in latest:
-            if self.news == n:
-                log.debug("same news")
-                continue
-            if n["date"] == self.news.get("date"):
-                if n["status"] == self.news.get("status"):
+            published_news = [
+                o for o in self.news if o.get("date") == n["date"]]
+            if len(published_news) == 0:
+                p = {}
+            else:
+                if len(published_news) > 1:
+                    log.error("there are same dates")
+                p = published_news[0]
+                if n == p:
+                    log.debug("same news")
+                    continue
+                if n["status"] == p.get("status"):
                     log.debug("almost same news")
                     continue
+
             text = self.create_text(n)
             if text:
                 texts.append(text)
 
         if latest:
-            self.news = latest[0]
+            self.news = latest
 
         return texts
 

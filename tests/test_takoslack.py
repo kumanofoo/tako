@@ -37,28 +37,35 @@ check_market_parameters = [
      1),
     # Same news
     ([("2021-10-10", "Apple", "comming_soon", 0, "")],
-     ("2021-10-10", "Apple", "comming_soon", 0, ""),
+     [("2021-10-10", "Apple", "comming_soon", 0, "")],
      0),
     # Almost same news
     ([("2021-10-10", "Apple", "comming_soon", 0, "")],
-     ("2021-10-10", "Banana", "comming_soon", 0, ""),
+     [("2021-10-10", "Banana", "comming_soon", 0, "")],
      0),
     # difference of status
     ([("2021-10-10", "Apple", "comming_soon", 0, "")],
-     ("2021-10-10", "Apple", "open", 0, ""),
+     [("2021-10-10", "Apple", "open", 0, "")],
      1),
     # Normal update
     ([("2021-10-10", "Apple", "comming_soon", 0, ""),
       ("2021-10-09", "Banana", "open", 0, ""),
       ("2021-10-08", "Cherry", "canceled", 0, "")],
-     ("2021-10-09", "Banana", "comming_soon", 0, ""),
+     [("2021-10-09", "Banana", "comming_soon", 0, "")],
      2),
+    # Normal update
+    ([("2021-10-10", "Apple", "comming_soon", 0, ""),
+      ("2021-10-09", "Banana", "closed", 0, ""),
+      ("2021-10-08", "Cherry", "canceled", 0, "")],
+     [("2021-10-10", "Apple", "comming_soon", 0, ""),
+      ("2021-10-09", "Banana", "open", 0, "")],
+     1),
     # Normal update with canceled
     ([("2021-10-10", "Apple", "comming_soon", 0, ""),
       ("2021-10-09", "Banana", "open", 0, ""),
       ("2021-10-08", "Cherry", "canceled", 0, ""),
       ("2021-10-07", "Durian", "closed", 0, "")],
-     ("2021-10-08", "Cherry", "open", 0, ""),
+     [("2021-10-08", "Cherry", "open", 0, "")],
      3),
 ]
 
@@ -76,7 +83,7 @@ def test_check_market(mocker, param, init, expected):
         return_value=area_history)
     news = News()
     if init:
-        news.news = parameter_maker([init])[0]
+        news.news = parameter_maker(init)
 
     news.check_market()
     news.check_market()  # not create same text

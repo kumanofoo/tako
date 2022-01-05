@@ -10,6 +10,7 @@ from tako.takoclient import TakoClient
 from tako import takoconfig
 from tako.takoconfig import TAKOBOT
 from tako.takotime import JST
+from tako.jma import JmaError
 
 log = logging.getLogger(__name__)
 
@@ -48,8 +49,15 @@ class Takobot(TakoClient):
         -------
         quantity : int
         """
+        min_sales = (takoconfig.MAX_SALES["cloudy"] +
+                     takoconfig.MAX_SALES["rainy"])
+        try:
+            forecast = self.get_forecast_in_next_area()
+        except JmaError as e:
+            log.warning(f"can't get weather forecast: {e}")
+            return min(self.max_order_quantity()[0], min_sales)
+
         expected = 0
-        forecast = self.get_forecast_in_next_area()
         for w in Takobot.WEATHER:
             if forecast["weather"]["text"].startswith(w):
                 count = 0
@@ -59,7 +67,8 @@ class Takobot(TakoClient):
                     expected += Takobot.EXPECTED[w][int(int(pops)/10)]
                     count += 1
                 break
-        return min(self.max_order_quantity()[0], int(expected/count))
+        return min(self.max_order_quantity()[0],
+                   max(int(expected/count), min_sales))
 
     def bot(self):
         """Thread of Tako Bot
