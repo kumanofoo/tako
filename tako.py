@@ -21,8 +21,8 @@ class TakoWorld:
         slackbot : TakoSlackBot
         """
         self.do_run = Event()
-        self.takobot = Takobot()
         self.takomarket = TakoMarket()
+        self.takobot = Takobot()
         self.slackbot = TakoSlackBot()
 
     def signal_handlar(self, signum, frame):
