@@ -44,8 +44,8 @@ class TakoWorld:
         for sig in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:
             signal.signal(sig, self.signal_handlar)
 
-        self.takobot.run_bot()
         self.takomarket.run_market()
+        self.takobot.run_bot()
         self.slackbot.run_bot()
 
         self.do_run.wait()  # wait for signal

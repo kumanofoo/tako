@@ -326,7 +326,7 @@ class News:
         news = TakoMarket.get_area_history()
         if news is None:
             log.debug("no news")
-            return
+            return texts
 
         if len(self.news) == 0:
             latest = news[0:1]
