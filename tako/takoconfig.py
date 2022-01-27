@@ -7,6 +7,7 @@ TAKO_DB = Path(os.environ.get("TAKO_DB", "tako_storage.db"))
 COST_PRICE = 40
 SELLING_PRICE = 50
 SEED_MONEY = 5000
+TARGET = 30000
 OPENING_TIME = "09:00"
 CLOSING_TIME = "18:00"
 

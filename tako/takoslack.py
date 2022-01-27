@@ -55,7 +55,7 @@ class TakoSlack(TakoClient):
         messages : list of str
         """
         messages = []
-        if cmd == "now":
+        if cmd == "info":
             messages.extend(self.balance())
             messages.extend(self.transaction())
             messages.append("")
@@ -81,6 +81,13 @@ class TakoSlack(TakoClient):
         Returns
         -------
         message : list of str
+
+        Example
+        -------
+        Balance: 5000 JPY / 125 takos
+        or
+        Your account is not found.
+        New account is open.
         """
         message = []
         condition = TakoMarket.condition(self.my_id)
@@ -89,8 +96,8 @@ class TakoSlack(TakoClient):
                 f"Balance: {condition['balance']} JPY / "
                 f"{int(condition['balance']/takoconfig.COST_PRICE)} takos")
         else:
-            message.append("your account is not found.\n")
-            message.append("open new account.")
+            message.append("Your account is not found.\n")
+            message.append("New account is open.")
 
         return message
 
@@ -126,6 +133,15 @@ class TakoSlack(TakoClient):
         Returns
         -------
         message : list of str
+
+        Example
+        -----------------------------------
+        DATE       Place  WX
+        ORD STK SALES/MAX STS
+        -----------------------------------
+        2021-10-10 帯広　 Sunny
+        125 125   125/500 closed
+        -----------------------------------
         """
         transactions = TakoMarket.get_transaction(self.my_id)
 
@@ -162,6 +178,13 @@ class TakoSlack(TakoClient):
         Returns
         -------
         message : list of str
+
+        Example
+        -------
+        Top 3 owners:
+          id1001: 10000 JPY
+          id1002: 9000 JPY
+          id1003: 5000 JPY
         """
         messages = ["Top 3 owners:"]
         ranking = self.ranking()
@@ -179,6 +202,13 @@ class TakoSlack(TakoClient):
         ----------
         name : str
             The name of The place.
+
+        Example
+        -------
+        24日 月曜日 山形
+        くもり後晴れ明け方一時雪
+        06  12  18
+        20% 10% 10%
         """
         messages = []
         meta = jma.PointMeta.get_point_meta(name)
@@ -207,6 +237,16 @@ class TakoSlack(TakoClient):
         Returns
         -------
         messages : list of str
+
+        Example
+        -------
+        Next: 山形
+          Open: 2022-01-24 09:00 JST
+          Close: 2022-01-24 18:00 JST
+          24日 月曜日 山形
+          くもり後晴れ明け方一時雪
+          06  12  18
+          20% 10% 10%
         """
         messages = []
         area = TakoMarket.get_next_area()
@@ -233,7 +273,7 @@ class TakoSlack(TakoClient):
         messages : list of str
         """
         messages = []
-        messages.append("now : Show Tako Market Information.")
+        messages.append("info : Show Tako Market Information.")
         messages.append("<Number> : Order tako.")
         messages.append("history : Show History of Transactions.")
         messages.append("help : Show this message.")
@@ -321,6 +361,19 @@ class News:
 
         return texts
 
+    def name_balance_badge(self, record):
+        name = record["name"]
+        balance = record["balance"]
+        badge = record['badge']
+        text = f"{name} : {balance} JPY"
+        text += "\n "
+        text += "⭐"*int(badge/100)
+        badge -= int(badge/100)*100
+        text += "🦑"*int(badge/10)
+        badge -= int(badge/10)*10
+        text += "🐙"*badge
+        return text
+
     def create_text(self, news_source):
         """Create text
 
@@ -353,24 +406,70 @@ class News:
                 log.debug("Old news of 'closed'")
                 return text
             closing_dt_str = jst.strftime("%Y-%m-%d %H:%M")
-            text = (f"Market is closed in {news_source['area']} "
-                    f"at {closing_dt_str}."
-                    "\n"
-                    f"Max sales: {news_source['sales']} "
-                    f"Weather: {news_source['weather']}"
-                    "\n"
-                    "Top 3 Owners"
-                    "\n")
-            ranking = sorted(
-                TakoMarket.condition_all(),
-                key=lambda x: x['balance'],
-                reverse=True
-            )
-            for i, owner in enumerate(ranking):
-                if i == 3:
-                    break
-                text += f"  {owner['name']}: {owner['balance']} JPY"
-                text += "\n"
+            records = TakoMarket.get_records(
+                date_jst=news_source["date"],
+                winner=False)
+            if len(records) == 0:
+                """
+                Example
+                -------
+
+                Market is closed in 網代 at 2021-10-10 18:00.
+                Max sales: 309 Weather: cloudy
+                Top 3 Owners
+                  id1001: 51290 JPY
+                  id1002: 33700 JPY
+                  id1003: 28750 JPY
+                """
+                text = (f"Market is closed in {news_source['area']} "
+                        f"at {closing_dt_str}."
+                        "\n"
+                        f"Max sales: {news_source['sales']} "
+                        f"Weather: {news_source['weather']}"
+                        "\n"
+                        "Top 3 Owners"
+                        "\n")
+                ranking = sorted(
+                    TakoMarket.condition_all(),
+                    key=lambda x: x['balance'],
+                    reverse=True
+                )
+                for i, owner in enumerate(ranking):
+                    if i == 3:
+                        break
+                    text += f"  {owner['name']}: {owner['balance']} JPY"
+                    text += "\n"
+            else:
+                """
+                Example
+                -------
+                This season is over. And next season has begun.
+                One : 35000 JPY
+                 ⭐🦑🐙
+                Two : 33000 JPY\n"
+                 🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
+                Three : 31000 JPY
+                 🦑🦑🦑
+
+                The following is the close to the target.
+                Four : 29000 JPY
+                 🦑🦑🦑🦑🦑🦑🦑🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
+
+                Five : 29000 JPY
+                """
+                text = "This season is over. And next season has begun."
+                balance = -float("inf")
+                for r in records[news_source["date"]]:
+                    if r["balance"] < r["target"]:
+                        if balance > r["balance"]:
+                            break
+                        if balance == -float("inf"):
+                            text += "\n"
+                            text += "\n"
+                            text += "The following is the close to the target."
+                        balance = r["balance"]
+                    text += "\n"
+                    text += self.name_balance_badge(r)
         if news_source["status"] == "canceled":
             text = (f"Market in {news_source['area']} at "
                     f"{news_source['date']} "

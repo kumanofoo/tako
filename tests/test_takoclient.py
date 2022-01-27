@@ -3,10 +3,13 @@
 import pytest
 import os
 import re
+import sys
+from io import StringIO
 from datetime import datetime, timedelta
 from tako.takoclient import TakoClient
 from tako import takoconfig
 from tako.takomarket import TakoMarket
+from tests.takodebug import debugcmd
 
 my_id = "MSN-02"
 my_name = "ZEONG"
@@ -113,3 +116,99 @@ def test_order_and_latest_transaction(db):
             assert len(transaction[key]) > 0
         else:
             assert transaction[key] == expected[key]
+
+
+def test_takocommand():
+    command = [
+        "125", "dooo",
+        "156", "dooo",
+        "195", "dooo",
+        "244", "dooo",
+        "305", "dooo",
+        "381", "dooo",
+        "476", "dooo",
+        "500", "dooo",
+        "500", "dooo",
+        "",
+        "125", "dooo",
+        "",
+        "quit",
+    ]
+    expected = r"""ID: id10000, Display name: cmdtest
+Ordered 125 tako
+next Midnight
+Ordered 156 tako
+next Midnight
+Ordered 195 tako
+next Midnight
+Ordered 244 tako
+next Midnight
+Ordered 305 tako
+next Midnight
+Ordered 381 tako
+next Midnight
+Ordered 476 tako
+next Midnight
+Ordered 500 tako
+next Midnight
+Ordered 500 tako
+next Midnight
+Balance: 5000 JPY at 1970-01-01 12:00 JST
+This season is over. And next season has begun.
+cmdtest : 33820 JPY
+🐙
+
+The following is the close to the target.
+name10001 : 5000 JPY
+name10002 : 5000 JPY
+name10003 : 5000 JPY
+name10004 : 5000 JPY
+
+Status: closed '1970-01-10' with 25000 JPY sales at 1970-01-01 12:00 JST
+        You sold 500 tako. (Ordered: 500, In stock: 500, Max: 500)
+
+Top 3 owners
+cmdtest: 5000 JPY
+name10001: 5000 JPY
+name10002: 5000 JPY
+
+Next: Area1010
+Open: 1970-01-11 09:00 JST
+Close: 1970-01-11 18:00 JST
+
+22xx-xx-xx Area1010
+Maybe Sunny
+06  12  18
+10% 20% 30%
+Ordered 125 tako
+next Midnight
+Balance: 6250 JPY at 1970-01-01 12:00 JST
+Status: closed '1970-01-11' with 6250 JPY sales at 1970-01-01 12:00 JST
+        You sold 125 tako. (Ordered: 125, In stock: 125, Max: 500)
+
+Top 3 owners
+cmdtest: 6250 JPY
+name10001: 5000 JPY
+name10002: 5000 JPY
+
+Next: Area1011
+Open: 1970-01-12 09:00 JST
+Close: 1970-01-12 18:00 JST
+
+22xx-xx-xx Area1011
+Maybe Sunny
+06  12  18
+10% 20% 30%
+"""
+    io = StringIO()
+    sys.stdout = io
+    debugcmd(command)
+    sys.stdout = sys.__stdout__
+    expected_list = expected.split("\n")
+    actual_list = io.getvalue().split("\n")
+    for a, e in zip(actual_list, expected_list):
+        if a.startswith("Balance:") or a.startswith("Status:"):
+            # remove timestamp
+            a = a.split(" at ")[0]
+            e = e.split(" at ")[0]
+        assert a == e, f"\n{a}\n{e}"

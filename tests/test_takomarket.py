@@ -1,7 +1,6 @@
 import os
 from datetime import datetime, timedelta, timezone
 import time
-import random
 import logging
 import freezegun
 import pytest
@@ -81,13 +80,12 @@ class TakoMarketTest:
         self.pre_tra = tra
 
     def create_owner(self, number_of_accounts):
+        step = self.mk.seed_money/self.mk.cost_price/number_of_accounts
         for i in range(0, number_of_accounts):
             o = {}
             o['owner_id'] = "id%06d" % i
             o['name'] = "name%02X" % i
-            o['quantity'] = random.randint(
-                1,
-                int(self.mk.seed_money/self.mk.cost_price*1.5))
+            o['quantity'] = step*(i+1)
             self.owner.append(o)
 
     def get_name(self):
@@ -326,35 +324,52 @@ def test_get_area_history(tmpdb):
         assert h["date"] == d, f"{area_history}\n{date_pattern}"
 
 
+get_point_side_effect = [
+    "Zero", "One", "Two", "Three", "Four",
+    "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    "Eleven", "Twelve", "Ichi", "Ni", "San", "Shi",
+    "Go", "Roku", "Shichi", "Hachi", "Kyu", "Ju",
+]
+
+weather_side_effect = [
+     {
+         "title": "weather news one",
+         "sunshine_hour": 6.5,
+         "rainfall_mm": 10,
+         "day_length_hour": 13.1,
+         "weather": "cloudy",
+     },
+     {
+         "title": "weather news two",
+         "sunshine_hour": 0.5,
+         "rainfall_mm": 30,
+         "day_length_hour": 10.2,
+         "weather": "Rainy",
+     },
+     {
+         "title": "weather news three",
+         "sunshine_hour": 8.5,
+         "rainfall_mm": 0,
+         "day_length_hour": 9.2,
+         "weather": "Sunny",
+     },
+]
+weather_side_effect.extend([
+    {
+         "title": "weather news four",
+         "sunshine_hour": 8.5,
+         "rainfall_mm": 0,
+         "day_length_hour": 9.2,
+         "weather": "Sunny",
+     },
+]*30)
+
+
 def test_takomarket(mocker):
     mocker.patch("tako.takomarket.TakoMarket.get_point",
-                 side_effect=["One", "Two", "Three", "Four",
-                              "Five", "Six", "Seven", "Nine", "Ten",
-                              "Eleven", "Twelve"])
+                 side_effect=get_point_side_effect)
     mocker.patch("tako.takomarket.TakoMarket.weather",
-                 side_effect=[
-                     {
-                         "title": "weather news one",
-                         "sunshine_hour": 6.5,
-                         "rainfall_mm": 10,
-                         "day_length_hour": 13.1,
-                         "weather": "cloudy",
-                     },
-                     {
-                         "title": "weather news two",
-                         "sunshine_hour": 0.5,
-                         "rainfall_mm": 30,
-                         "day_length_hour": 10.2,
-                         "weather": "Rainy",
-                     },
-                     {
-                         "title": "weather news three",
-                         "sunshine_hour": 8.5,
-                         "rainfall_mm": 0,
-                         "day_length_hour": 9.2,
-                         "weather": "Sunny",
-                     }
-                 ])
+                 side_effect=weather_side_effect)
     logging.basicConfig(level=logging.DEBUG)
 
     number_of_accounts = 5
@@ -442,7 +457,7 @@ def test_takomarket(mocker):
             ("08:59:00", "09:01:00", 20, "open"),
             ("17:59:00", "18:01:00", 20, "close"),
             ]),
-        ]
+    ]
 
     if os.path.exists(takoconfig.TAKO_DB):
         os.remove(takoconfig.TAKO_DB)

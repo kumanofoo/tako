@@ -77,6 +77,7 @@ class TakoMarket:
                     accounts (
                         owner_id TEXT PRIMARY KEY,
                         name TEXT,
+                        badge INTEGER,
                         timestamp TEXT
                     )""")
             conn.execute(
@@ -108,6 +109,17 @@ class TakoMarket:
                         sales INTEGER,
                         weather TEXT,
                         timestamp TEXT
+                    )""")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS
+                    records (
+                        date_jst TEXT,
+                        owner_id TEXT,
+                        balance INTEGER,
+                        target INTEGER,
+                        timestamp TEXT,
+                        PRIMARY KEY(date_jst, owner_id)
                     )""")
 
     def make_tako(self, date):
@@ -238,6 +250,10 @@ class TakoMarket:
             Market date as JST.
         max_sales : int
             Maximum sales today
+
+        Returns
+        -------
+        winner_exists : bool
         """
         with sqlite3.connect(self.dbfile) as conn:
             conn.execute(
@@ -316,6 +332,93 @@ class TakoMarket:
                     date_jst = ?
                 """,
                 (max_sales, date))
+
+            winner_exists = self.detect_winner_and_restart(conn, date)
+            if winner_exists:
+                conn.execute(
+                    """
+                    UPDATE
+                        tako_transaction
+                    SET
+                        status = 'closed_and_restart',
+                        timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+                    WHERE
+                        transaction_date = :date
+                        AND
+                        status = 'closed'
+                    """,
+                    {"date": date})
+
+            return winner_exists
+
+    def detect_winner_and_restart(self, conn, date_jst):
+        """Detect winner and restart market
+
+        Parameters
+        ----------
+        conn : SQLite3 database
+        date_jst : str
+
+        Returns
+        -------
+        winner_exists : bool
+        """
+        # detect winner
+        rows = list(conn.execute(
+            """
+            SELECT
+                *
+            FROM
+                tako
+            WHERE
+                balance >= ?
+            """,
+            (takoconfig.TARGET,)))
+        if len(rows) == 0:
+            return False
+        # restart market
+        conn.execute(
+            """
+            INSERT INTO
+                records
+            SELECT
+                ?, owner_id, balance, ?,
+                strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            FROM
+                tako
+            """,
+            (date_jst, takoconfig.TARGET))
+        conn.execute(
+            """
+            UPDATE
+                tako
+            SET
+                balance = ?
+            """,
+            (takoconfig.SEED_MONEY,))
+        conn.execute(
+            """
+            UPDATE
+                accounts
+            SET
+                badge = badge + 1
+            WHERE
+                owner_id in (
+                    SELECT
+                        owner_id
+                    FROM
+                        records
+                    WHERE
+                        date_jst = :date_jst
+                    AND
+                        balance >= :target
+                )
+            """,
+            {
+                "date_jst": date_jst,
+                "target": takoconfig.TARGET,
+            })
+        return True
 
     @staticmethod
     def set_tako_quantity(owner_id, date, quantity):
@@ -451,6 +554,77 @@ class TakoMarket:
                 (date,))
 
     @staticmethod
+    def get_records(date_jst=None, top=float("inf"), winner=True):
+        """Get records
+
+        Parameters
+        ----------
+        date_jst : str
+        top : int
+
+        Returns
+        -------
+        ranking : dict
+            {
+                "YYYY-MM-DD": [
+                    {
+                        "name": str,
+                        "balance": int,
+                        "target": int,
+                        "ranking": int,
+                        "badge": int,
+                    },
+                    {....}],
+                ....,
+            }
+        """
+        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
+            results = conn.execute(
+                """
+                SELECT
+                    r.date_jst, r.owner_id, a.name,
+                    r.balance, r.target, a.badge
+                FROM
+                    records r, accounts a
+                WHERE
+                    (
+                        r.date_jst = :date
+                    OR
+                        :date IS NULL
+                    )
+                AND
+                    r.owner_id = a.owner_id
+                AND
+                    (
+                        r.balance >= r.target
+                    OR
+                        :winner = 0
+                    )
+                """,
+                {"date": date_jst, "winner": winner})
+            results_dict = {}
+            for result in results:
+                if not results_dict.get(result[0]):
+                    results_dict[result[0]] = []
+                results_dict[result[0]].append(result[1:])
+            ret = {}
+            for date_jst in results_dict.keys():
+                r = []
+                for o in results_dict[date_jst]:
+                    c = len([u for u in results_dict[date_jst] if o[2] < u[2]])
+                    c += 1
+                    if c <= top:
+                        r.append({
+                            "name": o[1],
+                            "balance": o[2],
+                            "target": o[3],
+                            "ranking": c,
+                            "badge": o[4]
+                        })
+                ret[date_jst] = sorted(r, key=lambda x: x["ranking"])
+            return ret
+
+    @staticmethod
     def open_account(owner_id, name=None):
         """Open new account
 
@@ -471,10 +645,10 @@ class TakoMarket:
                 INSERT INTO
                     accounts
                 VALUES
-                    (?, ?,
+                    (?, ?, ?,
                      strftime('%Y-%m-%dT%H:%M:%f', 'now'))
                 """,
-                (owner_id, name))
+                (owner_id, name, 0))
 
             conn.execute(
                 """
@@ -734,7 +908,8 @@ class TakoMarket:
 
                     area = self.get_area(self.next_event["date"])["area"]
                     log.debug(f"Now close in {area}")
-                    self.result(self.next_event["date"], today_sales)
+                    if self.result(self.next_event["date"], today_sales):
+                        log.debug("detected winner and restart market")
                     self.log_weather(now, weather)
                     log.debug(
                         f"today_sales: {today_sales}, weather: {weather}")

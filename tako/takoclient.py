@@ -171,103 +171,266 @@ class TakoCommand(TakoClient):
     def interpret(self, cmd):
         """Interpret command
         """
+        response = []
         if cmd == "":
-            self.balance()
-            self.transaction()
-            print()
-            self.top3()
-            self.market()
+            response.extend(self.balance())
+            response.extend(self.transaction())
+            response.append("")
+            response.extend(self.top3())
+            response.extend(self.market())
         elif cmd.isdecimal():
             quantity = int(cmd)
             max_quantity = self.max_order_quantity()[0]
             if quantity >= 0 and quantity <= max_quantity:
                 if self.order(quantity):
-                    print(f"Ordered {quantity} tako")
+                    response.append(f"Ordered {quantity} tako")
         elif cmd == "history":
-            self.history()
+            response.extend(self.history())
         elif cmd == "help" or cmd == "?":
-            self.help()
+            response.extend(self.help())
         elif cmd == "quit":
             return False
 
+        print("\n".join(response))
         return True
 
     def balance(self):
         """Show the balance
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        Balance: 5000 JPY at 2021-10-10 12:22 JST
         """
+        texts = []
         condition = TakoMarket.condition(self.my_id)
-        balance = None
         if condition:
-            ts_str = self.astimezone(condition["timestamp"], tz=(+9, "JST"))
+            ts_str = self.astimezone(
+                condition["timestamp"],
+                tz=(+9, "JST"))
             balance = condition["balance"]
-            print(f"Balance: {balance} JPY"
-                  f" at {ts_str}")
+            texts.append(f"Balance: {balance} JPY at {ts_str}")
         else:
-            print(f"your account '{self.my_id}' is not found.")
-            print("open new account.")
+            texts.append(f"your account '{self.my_id}' is not found.")
+            texts.append("open new account.")
+        return texts
+
+    def text_for_closed(self, transaction):
+        """Show closing condition
+
+        Parameters
+        ----------
+        transaction : dict
+                "owner_id", "name", "balance",
+                "date", "quantity_ordered", "cost",
+                "quantity_in_stock", "sales",
+                "status", "timestamp", "area", "max_sales", "weather"
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        Status: closed 2021-10-10 with 5000 JPY sales at 2021-10-10 15:00 JST
+                You sold 200 tako. (Ordered: 200, In stock: 250, Max: 500)
+        """
+        texts = []
+        ts_str = self.astimezone(
+            transaction["timestamp"],
+            tz=(+9, "JST"))
+        texts.append(f"Status: closed '{transaction['date']}'"
+                     f" with {transaction['sales']} JPY sales"
+                     f" at {ts_str}")
+        market = TakoMarket.get_area(transaction["date"])
+        sales_q = int(transaction["sales"]/market["selling_price"])
+        ordered_q = transaction["quantity_ordered"]
+        in_stock_q = transaction["quantity_in_stock"]
+        texts.append(f"        You sold {sales_q} tako."
+                     f" (Ordered: {ordered_q},"
+                     f" In stock: {in_stock_q},"
+                     f" Max: {market['sales']})")
+        return texts
+
+    def name_balance_badge(self, record):
+        """Create text of name with badges
+        Parameters
+        ----------
+        record : dict
+            {
+                "name": str,
+                "balance": int,
+                "target": int,
+                "ranking": int,
+                "badge": int,
+            }
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        One : 35000 JPY
+        ⭐🦑🐙
+        """
+        texts = []
+        name = record["name"]
+        balance = record["balance"]
+        badge = record['badge']
+        text = f"{name} : {balance} JPY"
+        texts.append(text)
+
+        text = "⭐"*int(badge/100)
+        badge -= int(badge/100)*100
+        text += "🦑"*int(badge/10)
+        badge -= int(badge/10)*10
+        text += "🐙"*badge
+        if len(text) > 0:
+            texts.append(text)
+        return texts
+
+    def text_for_restart(self, transaction):
+        """Show record
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        This season is over. And next season has begun.
+        One : 35000 JPY
+         ⭐🦑🐙
+        Two : 33000 JPY\n"
+         🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
+        Three : 31000 JPY
+         🦑🦑🦑
+
+        The following is the close to the target.
+        Four : 29000 JPY
+         🦑🦑🦑🦑🦑🦑🦑🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
+
+        Five : 29000 JPY
+        """
+        texts = []
+        texts.append("This season is over. And next season has begun.")
+        balance = -float("inf")
+        records = TakoMarket.get_records(
+            date_jst=transaction["date"],
+            winner=False)
+        for r in records[transaction["date"]]:
+            if r["balance"] < r["target"]:
+                if balance > r["balance"]:
+                    break
+                if balance == -float("inf"):
+                    texts.append("")
+                    texts.append("The following is the close to the target.")
+                balance = r["balance"]
+            texts.extend(self.name_balance_badge(r))
+        texts.append("")
+        return texts
 
     def transaction(self):
-        """Show latest transaction.
+        """Create latest transaction.
+
+        Returns
+        -------
+        texts : list of str
+
+
+        Example
+        -------
+        Status: orderd 250 tako at 2021-10-10 19:00 JST
+        or
+        Status: 250 tako in stock at 2021-10-10 19:00 JST
+        or
+        Status: canceled 2021-10-10 at 2021-10-10 19:00 JST
         """
+        texts = []
         transaction = self.latest_transaction()
         if transaction:
             ts_str = self.astimezone(transaction["timestamp"], tz=(+9, "JST"))
             if transaction["status"] == "ordered":
-                print(f"Status: ordered {transaction['quantity_ordered']} tako"
-                      f" at {ts_str}")
+                texts.append(
+                    f"Status: ordered {transaction['quantity_ordered']} tako"
+                    f" at {ts_str}")
             if transaction["status"] == "in_stock":
-                print(f"Status: {transaction['quantity_in_stock']}"
-                      f" tako in stock at {ts_str}")
-            if transaction["status"] == "closed":
-                print(f"Status: closed '{transaction['date']}'"
-                      f" with {transaction['sales']} JPY sales"
-                      f" at {ts_str}")
-                market = TakoMarket.get_area(transaction["date"])
-                sales_q = int(transaction["sales"]/market["selling_price"])
-                ordered_q = transaction["quantity_ordered"]
-                in_stock_q = transaction["quantity_in_stock"]
-                print(f"        You sold {sales_q} tako."
-                      f" (Ordered: {ordered_q},"
-                      f" In stock: {in_stock_q},"
-                      f" Max: {market['sales']})")
+                texts.append(
+                    f"Status: {transaction['quantity_in_stock']}"
+                    f" tako in stock at {ts_str}")
+            if transaction["status"] in ["closed", "closed_and_restart"]:
+                if transaction["status"] == "closed_and_restart":
+                    texts.extend(self.text_for_restart(transaction))
+                texts.extend(self.text_for_closed(transaction))
             if transaction["status"] == "canceled":
-                print(f"Status: canceled '{transaction['date']}'"
-                      f" at {ts_str}")
+                texts.append(
+                    f"Status: canceled '{transaction['date']}'"
+                    f" at {ts_str}")
+        return texts
 
     def history(self, number=None, reverse=True):
         """Show transaction history
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        Date       Area     weather Ordered In stock Sales/max   Status
+        ------------------------------------------------------------------
+        2022-01-22 帯広　　             100        0     0/0     ordered
+        ------------------------------------------------------------------
         """
+        texts = []
         transactions = TakoMarket.get_transaction(self.my_id)
 
-        print("Date       Area     weather "
-              "Ordered In stock Sales/max   Status  ")
-        print("-"*66)
+        texts.append("Date       Area     weather "
+                     "Ordered In stock Sales/max   Status  ")
+        texts.append("-"*66)
         for n, t in enumerate(sorted(transactions,
                               key=lambda x: x["date"],
                               reverse=reverse)):
             if n == number:
                 break
             area = t["area"] + "　"*(4-len(t["area"]))
-            print("%s %4s %-7s %7d %8d %5d/%-5d %-8s" % (
-                    t['date'],
-                    area,
-                    t['weather'],
-                    t['quantity_ordered'],
-                    t['quantity_in_stock'],
-                    t['sales']/takoconfig.SELLING_PRICE,
-                    t['max_sales'],
-                    t['status']))
-        print("-"*66)
+            texts.append("%s %4s %-7s %7d %8d %5d/%-5d %-8s" % (
+                t['date'],
+                area,
+                t['weather'],
+                t['quantity_ordered'],
+                t['quantity_in_stock'],
+                t['sales']/takoconfig.SELLING_PRICE,
+                t['max_sales'],
+                t['status']))
+        texts.append("-"*66)
+        return texts
 
     def top3(self):
         """Show top 3 owners
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        Top 3 owners
+        id1001: 10000 JPY
+        id1002: 9000 JPY
+        id1003: 5000 JPY
         """
-        print("Top 3 owners")
+        texts = []
+        texts.append("Top 3 owners")
         runking = self.ranking()
         for i, owner in enumerate(runking):
             if i == 3:
                 break
-            print(f"{owner['name']}: {owner['balance']} JPY")
+            texts.append(f"{owner['name']}: {owner['balance']} JPY")
+        return texts
 
     def get_weather_forecast(self, name):
         """Show weather forecast.
@@ -276,15 +439,27 @@ class TakoCommand(TakoClient):
         ----------
         name : str
             The name of The place.
+
+        Returns
+        -------
+        texts : list of str
+
+        Example
+        -------
+        24日 月曜日 山形
+        くもり後晴れ明け方一時雪
+        06  12  18
+        20% 10% 10%
         """
+        texts = []
         meta = jma.PointMeta.get_point_meta(name)
         f = jma.Forecast.get_forecast(meta['class10s'])
         dow = self.DOW_JA[int(f["weather"]["datetime"].strftime("%w"))]
         weather_datetime = f["weather"]["datetime"].strftime(
             f"%e日 {dow}").strip()
         forecast_text = "".join(f["weather"]["text"].split())
-        print(f"{weather_datetime} {name}")
-        print(f"{forecast_text}")
+        texts.append(f"{weather_datetime} {name}")
+        texts.append(f"{forecast_text}")
         times = ""
         pops = ""
         for (t, p) in f["pops"]:
@@ -292,31 +467,60 @@ class TakoCommand(TakoClient):
                 continue
             times += "%2s  " % t.strftime("%H")
             pops += "%2s%% " % p
-        print(times)
-        print(pops)
+        texts.append(times)
+        texts.append(pops)
+        return texts
 
     def market(self):
         """Show market
+
+        Returns
+        -------
+        messages : list of str
+
+        Example
+        -------
+        Next: 山形
+        Open: 2022-01-24 09:00 JST
+        Close: 2022-01-24 18:00 JST
+
+        24日 月曜日 山形
+        くもり後晴れ明け方一時雪
+        06  12  18
+        20% 10% 10%
         """
+        texts = []
         area = TakoMarket.get_next_area()
         if area["date"]:
-            print()
-            print(f"Shop: {area['area']}")
+            texts.append("")
+            texts.append(f"Next: {area['area']}")
             tz = (+9, "JST")
             opening_time_str = self.astimezone(area['opening_datetime'], tz=tz)
             closing_time_str = self.astimezone(area['closing_datetime'], tz=tz)
-            print(f"Open: {opening_time_str}")
-            print(f"Close: {closing_time_str}")
-            print()
-            self.get_weather_forecast(area["area"])
+            texts.append(f"Open: {opening_time_str}")
+            texts.append(f"Close: {closing_time_str}")
+            texts.append("")
+            try:
+                forecast = self.get_weather_forecast(area["area"])
+                texts.extend(forecast)
+            except jma.JmaError as e:
+                log.warning(f"can't get weather forecast: {e}")
+        return texts
 
     def help(self):
         """Show help
+
+        Returns
+        -------
+        messages : list of str
         """
-        print("  <Enter> : Show Tako Market Information.")
-        print("  <Number> : Order tako.")
-        print("  quit : Quit this command.")
-        print("  help : Show this message.")
+        texts = []
+        texts.append("  <Enter> : Show Tako Market Information.")
+        texts.append("  <Number> : Order tako.")
+        texts.append("  history : Show History of Transactions.")
+        texts.append("  quit : Quit this command.")
+        texts.append("  help : Show this message.")
+        return texts
 
 
 def takocmd():

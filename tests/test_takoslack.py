@@ -91,30 +91,92 @@ def test_check_market(mocker, param, init, expected):
 
 
 publish_parameters = [
-    (("2021-10-09", "Apple", "coming_soon", 0, ""),
+    (("2021-10-09", "Apple", "coming_soon", 0, ""), False,
      r""),
-    (("2021-10-11", "Apple", "coming_soon", 0, ""),
+    (("2021-10-11", "Apple", "coming_soon", 0, ""), False,
      r"Market in Apple will open soon at 2021-10-11 09:00."),
-    (("2021-10-10", "Apple", "open", 0, ""),
+    (("2021-10-10", "Apple", "open", 0, ""), False,
      r"Market is opening in Apple at 2021-10-10 09:00."),
-    (("2021-10-09", "Apple", "open", 0, ""),
+    (("2021-10-09", "Apple", "open", 0, ""), False,
      r""),
-    (("2021-10-10", "Apple", "closed", 500, "Sunny"),
+    (("2021-10-10", "Apple", "closed", 500, "Sunny"), False,
      "Market is closed in Apple at 2021-10-10 09:00.\n"
      "Max sales: 500 Weather: Sunny\n"
      "Top 3 Owners\n"
      "  Four: 5000 JPY\n"
      "  Three: 3000 JPY\n"
      "  Two: 2000 JPY\n"),
+    (("2021-10-10", "Apple", "closed", 400, "Sunny"), True,
+     "This season is over. And next season has begun.\n"
+     "One : 35000 JPY\n"
+     " ⭐🦑🐙\n"
+     "Two : 33000 JPY\n"
+     " 🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙\n"
+     "Three : 31000 JPY\n"
+     " 🦑🦑🦑\n"
+     "\n"
+     "The following is the close to the target.\n"
+     "Four : 29000 JPY\n"
+     " 🦑🦑🦑🦑🦑🦑🦑🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙\n"
+     "Five : 29000 JPY\n"
+     " "
+     ),
 ]
+
+get_records_closed_and_restart = {
+    "2021-10-10": [
+        {
+            "name": "One",
+            "balance": 35000,
+            "target": 30000,
+            "ranking": 1,
+            "badge": 111,
+        },
+        {
+            "name": "Two",
+            "balance": 33000,
+            "target": 30000,
+            "ranking": 2,
+            "badge": 29,
+        },
+        {
+            "name": "Three",
+            "balance": 31000,
+            "target": 30000,
+            "ranking": 3,
+            "badge": 30,
+        },
+        {
+            "name": "Four",
+            "balance": 29000,
+            "target": 30000,
+            "ranking": 4,
+            "badge": 99,
+        },
+        {
+            "name": "Five",
+            "balance": 29000,
+            "target": 30000,
+            "ranking": 4,
+            "badge": 0,
+        },
+        {
+            "name": "Six",
+            "balance": 28000,
+            "target": 30000,
+            "ranking": 6,
+            "badge": 6,
+        },
+    ]
+}
 
 
 @pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
                     "os.environ.get('SLACK_BOT_TOKEN') is None",
                     reason="Need environment variables of Slack")
 @pytest.mark.freeze_time(datetime(2021, 10, 10, tzinfo=JST))
-@pytest.mark.parametrize("param, expected", publish_parameters)
-def test_create_text(mocker, param, expected):
+@pytest.mark.parametrize("param, restart, expected", publish_parameters)
+def test_create_text(mocker, param, restart, expected):
     from tako.takoslack import News
     condition_all = [
         {"name": "Three", "balance": 3000},
@@ -125,6 +187,15 @@ def test_create_text(mocker, param, expected):
     mocker.patch(
         "tako.takomarket.TakoMarket.condition_all",
         return_value=condition_all)
+    if restart:
+        mocker.patch(
+            "tako.takomarket.TakoMarket.get_records",
+            return_value=get_records_closed_and_restart)
+    else:
+        mocker.patch(
+            "tako.takomarket.TakoMarket.get_records",
+            return_value={})
     news = News()
     area = parameter_maker([param])
-    assert news.create_text(area[0]) == expected
+    actual = news.create_text(area[0])
+    assert actual == expected, f"{actual}"
