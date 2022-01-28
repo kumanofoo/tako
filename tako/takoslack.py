@@ -195,13 +195,14 @@ class TakoSlack(TakoClient):
 
         return messages
 
-    def get_weather_forecast(self, name):
+    def get_weather_forecast(self, name, date_jst):
         """Show weather forecast.
 
         Parameters
         ----------
         name : str
             The name of The place.
+        date_jst : str
 
         Example
         -------
@@ -212,7 +213,7 @@ class TakoSlack(TakoClient):
         """
         messages = []
         meta = jma.PointMeta.get_point_meta(name)
-        f = jma.Forecast.get_forecast(meta['class10s'])
+        f = jma.Forecast.get_forecast(meta['class10s'], date_jst)
         dow = self.DOW_JA[int(f["weather"]["datetime"].strftime("%w"))]
         weather_datetime = f["weather"]["datetime"].strftime(
             f"%e日 {dow}").strip()
@@ -258,7 +259,9 @@ class TakoSlack(TakoClient):
             messages.append(f"  Open: {opening_time_str}")
             messages.append(f"  Close: {closing_time_str}")
             try:
-                forecast = self.get_weather_forecast(area["area"])
+                forecast = self.get_weather_forecast(
+                    area["area"],
+                    area["date"])
                 messages.extend(["  "+m for m in forecast])
             except jma.JmaError as e:
                 log.warning(f"can't get weather forecast: {e}")

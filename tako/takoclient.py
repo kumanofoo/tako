@@ -120,7 +120,7 @@ class TakoClient:
             return None
 
         meta = jma.PointMeta.get_point_meta(area["area"])
-        forecast = jma.Forecast.get_forecast(meta['class10s'])
+        forecast = jma.Forecast.get_forecast(meta["class10s"], area["date"])
         return (forecast)
 
     def latest_transaction(self):
@@ -432,13 +432,14 @@ class TakoCommand(TakoClient):
             texts.append(f"{owner['name']}: {owner['balance']} JPY")
         return texts
 
-    def get_weather_forecast(self, name):
+    def get_weather_forecast(self, name, date_jst):
         """Show weather forecast.
 
         Parameters
         ----------
         name : str
             The name of The place.
+        date_jst : str
 
         Returns
         -------
@@ -453,7 +454,7 @@ class TakoCommand(TakoClient):
         """
         texts = []
         meta = jma.PointMeta.get_point_meta(name)
-        f = jma.Forecast.get_forecast(meta['class10s'])
+        f = jma.Forecast.get_forecast(meta['class10s'], date_jst)
         dow = self.DOW_JA[int(f["weather"]["datetime"].strftime("%w"))]
         weather_datetime = f["weather"]["datetime"].strftime(
             f"%e日 {dow}").strip()
@@ -501,7 +502,9 @@ class TakoCommand(TakoClient):
             texts.append(f"Close: {closing_time_str}")
             texts.append("")
             try:
-                forecast = self.get_weather_forecast(area["area"])
+                forecast = self.get_weather_forecast(
+                    area["area"],
+                    area["date"])
                 texts.extend(forecast)
             except jma.JmaError as e:
                 log.warning(f"can't get weather forecast: {e}")

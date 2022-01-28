@@ -176,7 +176,7 @@ Next: Area1010
 Open: 1970-01-11 09:00 JST
 Close: 1970-01-11 18:00 JST
 
-22xx-xx-xx Area1010
+1970-01-11 Area1010
 Maybe Sunny
 06  12  18
 10% 20% 30%
@@ -195,7 +195,7 @@ Next: Area1011
 Open: 1970-01-12 09:00 JST
 Close: 1970-01-12 18:00 JST
 
-22xx-xx-xx Area1011
+1970-01-12 Area1011
 Maybe Sunny
 06  12  18
 10% 20% 30%

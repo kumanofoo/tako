@@ -225,14 +225,13 @@ class Forecast:
             return codes
 
     @staticmethod
-    def get_forecast(class10s, forecast_limit_hour=6):
+    def get_forecast(class10s, date_jst):
         """Get forecast
 
         Parameters
         ----------
         class10s : str
-        forecast_limit_hour : int
-            Get tomorrow forecast after 'forecast_limit_hour'.
+        date_jst : str
 
         Returns
         -------
@@ -255,17 +254,7 @@ class Forecast:
         JmaError
             If can't get forecast.
         """
-        now = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
-        today = dt.datetime(
-            now.year,
-            now.month,
-            now.day,
-            tzinfo=dt.timezone(dt.timedelta(hours=9)),
-        )
-        if now.hour > forecast_limit_hour:
-            forecast_date = today + dt.timedelta(days=1)
-        else:
-            forecast_date = today
+        target_date = dt.date.fromisoformat(date_jst)
 
         office = Forecast.get_office_code(class10s)
         try:
@@ -291,19 +280,19 @@ class Forecast:
 
         forecast['weather'] = {'datetime': None, 'text': None}
         for i, ts in enumerate(data[0]['timeSeries'][0]['timeDefines']):
-            time = dt.datetime.fromisoformat(ts)
-            if forecast_date <= time:
-                forecast['weather']['datetime'] = time
+            forecast_datetime = dt.datetime.fromisoformat(ts)
+            if target_date == forecast_datetime.date():
+                forecast['weather']['datetime'] = forecast_datetime
                 areas = data[0]['timeSeries'][0]['areas']
                 forecast['weather']['text'] = areas[area_index]['weathers'][i]
                 break
 
         forecast['pops'] = []
         for i, ts in enumerate(data[0]['timeSeries'][1]['timeDefines']):
-            time = dt.datetime.fromisoformat(ts)
-            if forecast_date <= time:
+            forecast_datetime = dt.datetime.fromisoformat(ts)
+            if target_date == forecast_datetime.date():
                 forecast['pops'].append((
-                    time,
+                    forecast_datetime,
                     data[0]['timeSeries'][1]['areas'][area_index]['pops'][i]))
 
         return forecast
@@ -496,7 +485,8 @@ def main():
         print(f"skip {name} which have no class10s code")
 
     print(f"[{name}] ({meta['lat']}:{meta['lng']})")
-    f = Forecast.get_forecast(class10s)
+    now = dt.datetime.now(dt.timezone(dt.timedelta(hours=9)))
+    f = Forecast.get_forecast(class10s, now.strftime(r"%Y-%m-%d"))
     area_name = f['area_name']
     forecast_date = f['reportDatetime'].strftime("%b %d")
     forecast_time = f['reportDatetime'].strftime("%H%M")

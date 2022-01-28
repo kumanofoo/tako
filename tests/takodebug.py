@@ -15,9 +15,22 @@ DATE_JST = "1970-01-01"
 SALES = 500
 
 
-def mock_get_weather_forecast(_, name):
+def mock_get_weather_forecast(_, name, date_jst):
+    """Mock get_weather_forecast
+
+    Returns
+    -------
+    texts : list of str
+
+    Example
+    -------
+    1970-01-11 Area1010
+    Maybe Sunny
+    06  12  18
+    10% 20% 30%
+    """
     texts = []
-    texts.append(f"22xx-xx-xx {name}")
+    texts.append(f"{date_jst} {name}")
     texts.append("Maybe Sunny")
     texts.append("06  12  18")
     texts.append("10% 20% 30%")
