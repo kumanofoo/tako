@@ -2,7 +2,7 @@
 import os
 import logging
 from pathlib import Path
-TAKO_DB = Path(os.environ.get("TAKO_DB", "tako_storage.db"))
+TAKO_DB = Path(os.environ.get("TAKO_DB", "tako.db"))
 
 COST_PRICE = 40
 SELLING_PRICE = 50
@@ -41,11 +41,11 @@ def set_logging_level(envrion, name):
     logger
     """
     logger = logging.getLogger(name)
-    ENV_DEBUG = os.environ.get(envrion)
-    if ENV_DEBUG == "info":
+    ENV_LOGGING_LEVEL = os.environ.get(envrion)
+    if ENV_LOGGING_LEVEL == "info":
         log_level = logging.INFO
         formatter = '%(name)s: %(message)s'
-    elif ENV_DEBUG == "debug":
+    elif ENV_LOGGING_LEVEL == "debug":
         log_level = logging.DEBUG
         formatter = '%(asctime)s %(name)s[%(lineno)s] ' \
                     '%(levelname)s: %(message)s'

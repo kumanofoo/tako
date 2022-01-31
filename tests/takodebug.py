@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 
-import os
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock
 import freezegun
 from tako.takomarket import TakoMarket
-from tako import takoconfig
 from tako.takoclient import TakoCommand
 
 
-DATABASE = "test.db"
 DATE_JST = "1970-01-01"
 SALES = 500
 
@@ -60,7 +56,7 @@ class DebugMarket:
         debug.open()
         debug.close()
     """
-    def __init__(self, date_jst=DATE_JST, owner_num=5, db=DATABASE):
+    def __init__(self, date_jst=DATE_JST, owner_num=5):
         """Initialize each attributes and database
         """
         self.date_jst = date_jst
@@ -68,10 +64,6 @@ class DebugMarket:
         self.area_code = 1000
         self.owners = []
         self.freezetime = None
-
-        takoconfig.TAKO_DB = Path(db)
-        if Path.exists(takoconfig.TAKO_DB):
-            os.remove(takoconfig.TAKO_DB)
 
         TakoMarket.get_point = MagicMock(
             side_effect=self.mock_get_point)

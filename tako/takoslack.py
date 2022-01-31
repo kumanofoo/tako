@@ -16,19 +16,9 @@ from tako.takotime import JST
 
 log = logging.getLogger(__name__)
 
-
-bot_token = os.environ.get("SLACK_BOT_TOKEN")
-if bot_token is None:
-    log.critical("Environment value 'SLACK_BOT_TOKEN' is not defined")
-    exit(1)
-app_token = os.environ.get("SLACK_APP_TOKEN")
-if app_token is None:
-    log.critical("Environment value 'SLACK_APP_TOKEN' is not defined")
-    exit(1)
 bot_channel = os.environ.get("SLACK_TAKO_CHANNEL")
-
-slack_app = App(token=bot_token)
-slack_handler = SocketModeHandler(slack_app, app_token)
+slack_app = App()
+slack_handler = SocketModeHandler(slack_app)
 
 
 @slack_app.event("message")
@@ -555,7 +545,7 @@ class TakoSlackBot():
 
 def main():
     global log
-    log = takoconfig.set_logging_level("TAKOSLACK_DEBUG", "takoslackbot")
+    log = takoconfig.set_logging_level("TAKO_LOGGING_LEVEL", "takoslackbot")
 
     slackbot = TakoSlackBot()
 

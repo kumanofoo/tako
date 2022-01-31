@@ -9,7 +9,7 @@ import freezegun
 from datetime import datetime, timedelta
 
 
-DATABASE = "test.db"
+DATABASE = "test_detect_winner.db"
 DATE_JST = "1970-01-01"
 OWNER_NUM = 5
 POINTS_SIDE_EFFECT = [
@@ -113,3 +113,4 @@ def test_detect_winner(mocker):
             # midnight
             now = datetime.now(JST) + timedelta(hours=8)
             freezer.move_to(now)
+    os.remove(takoconfig.TAKO_DB)

@@ -18,11 +18,13 @@ my_name = "ZEONG"
 @pytest.mark.freeze_time("1970-01-01")
 @pytest.fixture
 def db():
-    takoconfig.TAKO_DB = "tako_test.db"
+    takoconfig.TAKO_DB = "test_takoclient.db"
     if os.path.exists(takoconfig.TAKO_DB):
         os.remove(takoconfig.TAKO_DB)
     tm = TakoMarket()  # create new database
     tm.set_area()
+    yield
+    os.remove(takoconfig.TAKO_DB)
 
 
 def test_init(db):
@@ -119,6 +121,9 @@ def test_order_and_latest_transaction(db):
 
 
 def test_takocommand():
+    takoconfig.TAKO_DB = "test_takoclient.db"
+    if os.path.exists(takoconfig.TAKO_DB):
+        os.remove(takoconfig.TAKO_DB)
     command = [
         "125", "dooo",
         "156", "dooo",
@@ -208,7 +213,8 @@ Maybe Sunny
     actual_list = io.getvalue().split("\n")
     for a, e in zip(actual_list, expected_list):
         if a.startswith("Balance:") or a.startswith("Status:"):
-            # remove timestamp
+            # except timestamp
             a = a.split(" at ")[0]
             e = e.split(" at ")[0]
         assert a == e, f"\n{a}\n{e}"
+    os.remove(takoconfig.TAKO_DB)

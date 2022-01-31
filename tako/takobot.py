@@ -129,7 +129,7 @@ class Takobot(TakoClient):
 
 def main():
     global log
-    log = takoconfig.set_logging_level("TAKOBOT_DEBUG", "takobot")
+    log = takoconfig.set_logging_level("TAKO_LOGGING_LEVEL", "takobot")
 
     tako = Takobot()
     for sig in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:

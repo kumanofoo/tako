@@ -126,7 +126,7 @@ class TestRecords:
         return []
 
     def test_records(self):
-        takoconfig.TAKO_DB = Path("debug.db")
+        takoconfig.TAKO_DB = Path("test_records.db")
         if Path.exists(takoconfig.TAKO_DB):
             os.remove(takoconfig.TAKO_DB)
 
@@ -178,6 +178,8 @@ class TestRecords:
             assert len(actual) == expected[0]
             assert len(actual.get(date_jst[0], [])) == expected[1]
             assert len(actual.get(date_jst[1], [])) == expected[2], f"{param}"
+
+        os.remove(takoconfig.TAKO_DB)
 
 
 if __name__ == "__main__":

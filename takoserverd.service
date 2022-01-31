@@ -1,0 +1,11 @@
+[Unit]
+Description=takoserver
+
+[Service]
+ExecStart=/opt/takoserver/bin/takoserver
+EnvironmentFile=/etc/default/takoserver
+Restart=always
+Type=simple
+
+[Install]
+WantedBy=multi-user.target

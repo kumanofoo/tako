@@ -1387,7 +1387,7 @@ def tako_server():
     import argparse
 
     global log
-    log = takoconfig.set_logging_level("TAKOMARKET_DEBUG", "tako_server")
+    log = takoconfig.set_logging_level("TAKO_LOGGING_LEVEL", "tako_server")
 
     parser = argparse.ArgumentParser(description="Takoyaki Market")
     parser.add_argument("-d", "--daemon", action="store_true")
