@@ -4,6 +4,7 @@ set -u
 
 takouser=takoyaki
 takoserver_dir="/opt/takoserver"
+takodb=tako.db
 etc_dir="${takoserver_dir}/etc"
 
 docker_image="takoserver:test"
@@ -12,6 +13,7 @@ docker_container="test_takoserver"
 install_takoserver() {
     useradd -s /bin/bash ${takouser} || exit $?
     install -m 750 -o ${takouser} -g ${takouser} -d ${takoserver_dir}
+    install -m 660 -o ${takouser} -g ${takouser} /dev/null ${takoserver_dir}/${takodb}
     su ${takouser} -c "python3 -m venv ${takoserver_dir}" || exit $?
     su ${takouser} -c ". ${takoserver_dir}/bin/activate && pip install wheel && pip install .[dev]" || exit $?
 
