@@ -1,7 +1,8 @@
 #!/bin/bash
 
-set -eu
+set -u
 
+takouser=takoyaki
 takoserver_dir="/opt/takoserver"
 etc_dir="${takoserver_dir}/etc"
 
@@ -9,10 +10,10 @@ docker_image="takoserver:test"
 docker_container="test_takoserver"
 
 install_takoserver() {
-    python3 -m venv ${takoserver_dir}
-    source ${takoserver_dir}/bin/activate
-    pip install wheel
-    pip install .[dev]
+    useradd -s /bin/bash ${takouser} || exit $?
+    install -m 750 -o ${takouser} -g ${takouser} -d ${takoserver_dir}
+    su ${takouser} -c "python3 -m venv ${takoserver_dir}" || exit $?
+    su ${takouser} -c ". ${takoserver_dir}/bin/activate && pip install wheel && pip install .[dev]" || exit $?
 
     if [ -f /etc/default/takoserver ]; then
         echo skip install /etc/default/takoserver
@@ -58,6 +59,7 @@ uninstall_takoserver() {
     rm /etc/systemd/system/takoserverd.service
     rm /etc/default/takoserver
     rm -r ${takoserver_dir}
+    userdel ${takouser}
 }
 
 initialize_docker() {

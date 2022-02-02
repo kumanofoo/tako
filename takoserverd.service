@@ -6,6 +6,8 @@ ExecStart=/opt/takoserver/bin/takoserver
 EnvironmentFile=/etc/default/takoserver
 Restart=always
 Type=simple
+User=takoyaki
+Group=takoyaki
 
 [Install]
 WantedBy=multi-user.target
