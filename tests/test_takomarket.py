@@ -104,8 +104,12 @@ class TakoMarketTest:
             assert self.mk.seed_money == actual['balance']
 
         for o in self.owner:
-            actual = self.mk.get_name(o['owner_id'])
+            actual = self.mk.get_name(o['owner_id'])[0]
+            assert o['owner_id'] == actual
+            actual = self.mk.get_name(o['owner_id'])[1]
             assert o['name'] == actual
+            actual = self.mk.get_name(o['owner_id'])[2]
+            assert 0 == actual
 
     def change_name(self):
         test_set = [
@@ -119,7 +123,7 @@ class TakoMarketTest:
                 _ = self.mk.get_name(owner_id)
             self.mk.open_account(owner_id, name=name1)
             self.mk.change_name(owner_id, name=name2)
-            actual = self.mk.get_name(owner_id)
+            actual = self.mk.get_name(owner_id)[1]
             assert name2 == actual
 
         test_owner_id = "cherry"

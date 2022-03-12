@@ -29,13 +29,13 @@ def db():
 
 def test_init(db):
     _ = TakoClient("11111", "")
-    assert TakoMarket.get_name("11111") != ""  # at random
+    assert TakoMarket.get_name("11111")[1] != ""  # at random
     _ = TakoClient("11111", "aaaaa")
-    assert TakoMarket.get_name("11111") == "aaaaa"
+    assert TakoMarket.get_name("11111")[1] == "aaaaa"
     _ = TakoClient("11111", "bbbbb")
-    assert TakoMarket.get_name("11111") == "bbbbb"
+    assert TakoMarket.get_name("11111")[1] == "bbbbb"
     _ = TakoClient("11111", "")
-    assert TakoMarket.get_name("11111") == "bbbbb"
+    assert TakoMarket.get_name("11111")[1] == "bbbbb"
 
 
 def test_astimezone(db):
@@ -158,6 +158,7 @@ Ordered 500 tako
 next Midnight
 Ordered 500 tako
 next Midnight
+cmdtest 🐙
 Balance: 5000 JPY at 1970-01-01 12:00 JST
 This season is over. And next season has begun.
 cmdtest : 33820 JPY
@@ -187,6 +188,7 @@ Maybe Sunny
 10% 20% 30%
 Ordered 125 tako
 next Midnight
+cmdtest 🐙
 Balance: 6250 JPY at 1970-01-01 12:00 JST
 Status: closed '1970-01-11' with 6250 JPY sales at 1970-01-01 12:00 JST
         You sold 125 tako. (Ordered: 125, In stock: 125, Max: 500)

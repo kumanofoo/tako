@@ -133,13 +133,16 @@ class TakoClient:
                 "owner_id": str,
                 "name": str,
                 "balance": str,
-                "transaction_date": str,
+                "date": str,
                 "quantity_ordered": int,
                 "cost": int,
                 "quantity_in_stock": int,
                 "sales": int,
                 "status": str,
-                "timestamp": int
+                "timestamp": int,
+                "area": str,
+                "max_sales": int,
+                "weather": str,
             }
         """
         transactions = TakoMarket.get_transaction(self.my_id)
@@ -166,6 +169,34 @@ class TakoClient:
             log.warning("Next market is not found.")
             return False
 
+    @staticmethod
+    def badge_to_emoji(badge):
+        """Get the display name and badges
+
+        Parameters
+        ----------
+        badge : int
+
+        Returns
+        -------
+        str
+
+        Examples
+        --------
+        111 badges:
+            ⭐🦑🐙
+        29 badges:
+            🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
+        30 badges:
+            🦑🦑🦑
+        """
+        emoji = "⭐"*int(badge/100)
+        badge -= int(badge/100)*100
+        emoji += "🦑"*int(badge/10)
+        badge -= int(badge/10)*10
+        emoji += "🐙"*badge
+        return emoji
+
 
 class TakoCommand(TakoClient):
     def interpret(self, cmd):
@@ -173,6 +204,7 @@ class TakoCommand(TakoClient):
         """
         response = []
         if cmd == "":
+            response.append(self.name_with_badge())
             response.extend(self.balance())
             response.extend(self.transaction())
             response.append("")
@@ -193,6 +225,24 @@ class TakoCommand(TakoClient):
 
         print("\n".join(response))
         return True
+
+    def name_with_badge(self):
+        """Show name with badge
+
+        Returns
+        -------
+        name : str
+
+        Example
+        -------
+        One ⭐🦑🐙
+        Two
+        Three 🦑🦑🦑
+        """
+        name = []
+        (_id, name, badges, *_) = TakoMarket.get_name(self.my_id)
+        badges_str = TakoClient.badge_to_emoji(badges)
+        return "%s %s" % (name, badges_str)
 
     def balance(self):
         """Show the balance
@@ -283,12 +333,7 @@ class TakoCommand(TakoClient):
         badge = record['badge']
         text = f"{name} : {balance} JPY"
         texts.append(text)
-
-        text = "⭐"*int(badge/100)
-        badge -= int(badge/100)*100
-        text += "🦑"*int(badge/10)
-        badge -= int(badge/10)*10
-        text += "🐙"*badge
+        text = TakoClient.badge_to_emoji(badge)
         if len(text) > 0:
             texts.append(text)
         return texts
@@ -541,7 +586,7 @@ def takocmd():
         my_name = args.name
 
     tc = TakoCommand(my_id, my_name)
-    print(f"ID: {tc.my_id}, Display name: { tc.my_name}")
+    print(f"ID: {tc.my_id}, Display name: {tc.my_name}")
 
     while True:
         cmd = input(f"tako[{tc.max_order_quantity()[0]}]: ")

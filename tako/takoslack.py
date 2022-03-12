@@ -46,6 +46,7 @@ class TakoSlack(TakoClient):
         """
         messages = []
         if cmd == "info":
+            messages.append(self.name_with_badge)
             messages.extend(self.balance())
             messages.extend(self.transaction())
             messages.append("")
@@ -64,6 +65,24 @@ class TakoSlack(TakoClient):
             messages.extend(self.help())
 
         return messages
+
+    def name_with_badge(self):
+        """Show name with badge
+
+        Returns
+        -------
+        name : str
+
+        Example
+        -------
+        One ⭐🦑🐙
+        Two
+        Three 🦑🦑🦑
+        """
+        name = []
+        (_id, name, badges, *_) = TakoMarket.get_name(self.my_id)
+        badges_str = TakoClient.badge_to_emoji(badges)
+        return "%s %s" % (name, badges_str)
 
     def balance(self):
         """Show the balance
@@ -360,11 +379,7 @@ class News:
         badge = record['badge']
         text = f"{name} : {balance} JPY"
         text += "\n "
-        text += "⭐"*int(badge/100)
-        badge -= int(badge/100)*100
-        text += "🦑"*int(badge/10)
-        badge -= int(badge/10)*10
-        text += "🐙"*badge
+        text += TakoClient.badge_to_emoji(badge)
         return text
 
     def create_text(self, news_source):

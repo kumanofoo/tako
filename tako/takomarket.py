@@ -827,8 +827,8 @@ class TakoMarket:
 
         Returns
         -------
-        str
-            The display name of the owner.
+        list
+            [owner_id_str, name_str, badge_int]
         """
         with sqlite3.connect(takoconfig.TAKO_DB) as conn:
             rows = list(conn.execute(
@@ -847,7 +847,7 @@ class TakoMarket:
         if len(rows) != 1:
             raise TakoMarketError(f"multiple rows: {owner_id}")
 
-        return rows[0][1]
+        return rows[0]
 
     def schedule(self, onetime=False):
         """Do a transaction
@@ -1311,7 +1311,8 @@ class TakoMarket:
             w['sunshine_hour'] /
             (w['day_length_hour'] -
              takoconfig.SUNSHINE_RATIO_CORRECTION_HOUR), 1.0)
-        rainfall_max_mm = 5.0*w['day_length_hour']
+        hard_rain_mm_par_hour = 5.0
+        rainfall_max_mm = hard_rain_mm_par_hour*w['day_length_hour']
         rainfall_ratio = min(w['rainfall_mm'], rainfall_max_mm)/rainfall_max_mm
 
         today_sales = int(takoconfig.MAX_SALES['cloudy']
@@ -1367,7 +1368,8 @@ class TakoMarket:
         weather = "cloudy"
         if sunshine_ratio > 0.1:
             weather = "suunny"
-        if rainfall > 2.0*day_length_hour:
+        rainfall_mm_par_hour = 2.0
+        if rainfall > rainfall_mm_par_hour*day_length_hour:
             weather = "rainy"
 
         today = {
