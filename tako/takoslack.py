@@ -46,7 +46,7 @@ class TakoSlack(TakoClient):
         """
         messages = []
         if cmd == "info":
-            messages.append(self.name_with_badge)
+            messages.append(self.name_with_badge())
             messages.extend(self.balance())
             messages.extend(self.transaction())
             messages.append("")
