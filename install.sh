@@ -5,22 +5,33 @@ set -u
 takouser=takoyaki
 takoserver_dir="/opt/takoserver"
 takodb=tako.db
-etc_dir="${takoserver_dir}/etc"
 
 docker_image="takoserver:test"
 docker_container="test_takoserver"
 
 install_takoserver() {
-    useradd -s /bin/bash ${takouser} || exit $?
-    install -m 750 -o ${takouser} -g ${takouser} -d ${takoserver_dir}
-    install -m 660 -o ${takouser} -g ${takouser} /dev/null ${takoserver_dir}/${takodb}
-    su ${takouser} -c "python3 -m venv ${takoserver_dir}" || exit $?
-    su ${takouser} -c ". ${takoserver_dir}/bin/activate && pip install wheel && pip install .[dev]" || exit $?
-
+    if id "${takouser}" &>/dev/null; then
+        echo $takouser user already exists.
+    else
+        useradd -d ${takoserver_dir} -s /usr/sbin/nologin -r ${takouser} || exit $?
+    fi
+    if [ -d "${takoserver_dir}" ]; then
+        echo ${takoserver_dir} already exists.
+    else
+        install -m 750 -o ${takouser} -g ${takouser} -d ${takoserver_dir} || exit $?
+    fi
+    python3 -m venv "${takoserver_dir}/venv" || exit $?
+    . "${takoserver_dir}/venv/bin/activate" && pip install --upgrade pip && pip install wheel && pip install .[dev] || exit $?
+    chown takoyaki:takoyaki -R "${takoserver_dir}/venv" || exit $?
+    if [ -f "${takoserver_dir}/${takodb}" ]; then
+        echo "${takoserver_dir}/${takodb}" already exists.
+    else
+        install -m 660 -o ${takouser} -g ${takouser} /dev/null ${takoserver_dir}/${takodb} || exit $?
+    fi
     if [ -f /etc/default/takoserver ]; then
         echo skip install /etc/default/takoserver
     else
-        install -o root -g root -m 600 takoserver /etc/default
+        install -o root -g root -m 600 takoserver /etc/default || exit $?
     fi
     
     if [ -f /etc/systemd/system/takoserverd.service ]; then
@@ -28,7 +39,7 @@ install_takoserver() {
     else
         install -o root -g root -m 644 \
                 takoserverd.service \
-                /etc/systemd/system
+                /etc/systemd/system || exit $?
     fi
 
     cat <<EOF
@@ -86,17 +97,17 @@ initialize_docker() {
     rm ${takoserver_files}
     rmdir ${temp_dir}
     docker exec ${docker_container} /bin/bash \
-        -c "mkdir -p /root/project/takoserver && tar zxf /tmp/files.tar.gz -C /root/project/takoserver"
+        -c "mkdir -p /tmp/takoserver && tar zxf /tmp/files.tar.gz -C /tmp/takoserver"
 
     # exec installer in container
-    docker exec ${docker_container} /bin/bash -c "cd takoserver && /bin/bash install.sh install"
+    docker exec ${docker_container} /bin/bash -c "cd /tmp/takoserver && /bin/bash install.sh install"
 }
 
 test_on_docker() {
     initialize_docker
     # run test
     docker exec ${docker_container} /bin/bash \
-           -c "source ${takoserver_dir}/bin/activate && cd takoserver && pytest"
+           -c "source ${takoserver_dir}/venv/bin/activate && cd /tmp/takoserver && pytest"
     stop_docker
 }
 
@@ -104,7 +115,7 @@ run_on_docker() {
     initialize_docker
     # run takoserverd
     docker exec ${docker_container} /bin/bash \
-           -c "source ${takoserver_dir}/bin/activate && takoserver"
+           -c "source ${takoserver_dir}/venv/bin/activate && takoserver"
 }
 
 stop_docker() {
