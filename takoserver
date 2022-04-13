@@ -1,0 +1,12 @@
+TAKO_DB=/opt/takoserver/tako.db
+
+# To enable slackbot, set two tokens and channel ID and uncomment the line below
+#SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+#SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
+#SLACK_TAKO_CHANNEL=SSSSSSSSSSS
+
+# 'debug', 'info', 'warning' (Default logging level is warning.) 
+#TAKO_LOGGING_LEVEL=debug
+
+#TAKOSERVER=market:bot:slackbot
+#PYTHONDONTWRITEBYTECODE=1
