@@ -1367,7 +1367,7 @@ class TakoMarket:
 
         weather = "cloudy"
         if sunshine_ratio > 0.1:
-            weather = "suunny"
+            weather = "sunny"
         rainfall_mm_par_hour = 2.0
         if rainfall > rainfall_mm_par_hour*day_length_hour:
             weather = "rainy"
