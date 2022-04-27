@@ -634,7 +634,7 @@ class TakoMarket:
             Owner ID
         name : str
             Name of Owner
-            If name is None, a name is set at rundom.
+            If name is None, a name is set at random.
         """
         if not name:
             name = names.names()

@@ -36,6 +36,301 @@ def tako_reception(ack, say, message):
     say("```" + "\n".join(msg) + "```")
 
 
+def create_home_view(user_id):
+    view = {}
+    view["type"] = "home"
+    view["blocks"] = []
+
+    tako_slack = TakoSlack(user_id, None)
+    (_id, name, badges, *_) = TakoMarket.get_name(user_id)
+    badges_str = TakoClient.badge_to_emoji(badges)
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": f"Hey {name}!\n{badges_str}\n\n",
+            "emoji": True
+        }
+    })
+    condition = TakoMarket.condition(user_id)
+    balance = condition["balance"]
+    takos = int(condition["balance"]/takoconfig.COST_PRICE)
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": f"Balance: {balance} JPY / {takos} takos"
+        }
+    })
+    news = News()
+    news_str = "\n".join(news.check_market())
+    if news_str == "":
+        news_str = "Umm... No news..."
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": news_str
+        }
+    })
+    view["blocks"].append({
+        "type": "divider"
+    })
+    transaction_list = ["*Latest transaction*"]
+    transaction_list.extend(tako_slack.transaction())
+    transaction_str = "\n".join(transaction_list)
+    top3_list = ["*Top 3 owners*"]
+    top3_list.extend(tako_slack.top3())
+    top3_str = "\n".join(top3_list)
+    next_market, forecast = tako_slack.market_info()
+    next_market_list = ["*Next*"]
+    next_market_list.extend(next_market)
+    next_market_str = "\n".join(next_market_list)
+    forecast_list = ["*Weather Forecast*"]
+    if forecast:
+        forecast_list.extend(forecast[:2])
+        for h, p in zip(forecast[2].split(), forecast[3].split()):
+            forecast_list.append(f"{h}: {p}")
+    forecast_str = "\n".join(forecast_list)
+    view["blocks"].append({
+        "type": "section",
+        "fields": [
+            {
+                "type": "mrkdwn",
+                "text": transaction_str + "\n"
+            },
+            {
+                "type": "mrkdwn",
+                "text": top3_str + "\n"
+            },
+            {
+                "type": "mrkdwn",
+                "text": next_market_str + "\n"
+            },
+            {
+                "type": "mrkdwn",
+                "text": forecast_str + "\n"
+            }
+        ]
+    })
+    view["blocks"].append({
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Order"
+                },
+                "style": "primary",
+                "action_id": "input_order_modal"
+            },
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "History"
+                },
+                "action_id": "show_history_modal"
+            },
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Story"
+                },
+                "action_id": "show_story_modal"
+            }
+        ]
+    })
+    return view
+
+
+@slack_app.event("app_home_opened")
+def tako_home_open(client, event):
+    log.debug(f"{event['user']} opened home tab.")
+    user_id = event["user"]
+    view = create_home_view(user_id)
+    try:
+        client.views_publish(
+            user_id=event["user"],
+            view=view)
+    except Exception as e:
+        log.error(f"Error publishing home tab: {e}")
+
+
+@slack_app.action("input_order_modal")
+def input_order_modal(ack, body, client):
+    log.debug(f"{body['user']['id']} opened input_order modal.")
+    ack()
+    user_id = body["user"]["id"]
+    condition = TakoMarket.condition(user_id)
+    balance = condition["balance"]
+    takos = int(balance/takoconfig.COST_PRICE)
+    max_sales = takoconfig.MAX_SALES["sunny"] + takoconfig.MAX_SALES["cloudy"]
+    max_order = min(takos, max_sales)
+    view = {
+        "type": "modal",
+        "callback_id": "order_result",
+        "title": {
+            "type": "plain_text",
+            "text": "Order takoyaki"
+        },
+        "submit": {
+            "type": "plain_text",
+            "text": "Submit",
+        },
+        "close": {
+            "type": "plain_text",
+            "text": "Close"
+        },
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"Balance: {balance} JPY / {takos} takos"
+                }
+            },
+            {
+                "type": "input",
+                "block_id": "input_tako_block",
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "submit_order",
+                    "placeholder": {
+                        "type": "plain_text",
+                        "text": "Number of takoyaki"
+                    }
+                },
+                "label": {
+                    "type": "plain_text",
+                    "text": f"How many tako do you order? (0-{max_order})"
+                }
+            }
+        ]
+    }
+    try:
+        client.views_open(
+            trigger_id=body["trigger_id"],
+            view=view
+        )
+    except Exception as e:
+        log.error(f"Error opening input_order_modal: {e}")
+
+
+@slack_app.view("order_result")
+def order_result(ack, body, client, view):
+    user_id = body["user"]["id"]
+    condition = TakoMarket.condition(user_id)
+    balance = condition["balance"]
+    max_sales = takoconfig.MAX_SALES["sunny"] + takoconfig.MAX_SALES["cloudy"]
+    takos = min(int(balance/takoconfig.COST_PRICE), max_sales)
+    input_tako_block = view["state"]["values"]["input_tako_block"]
+    input_value = input_tako_block["submit_order"]["value"]
+    log.debug(f"{user_id} ordered {input_value}.")
+    errors = {}
+    try:
+        quantity = int(input_value)
+    except ValueError:
+        errors["input_tako_block"] = "Only Integers."
+        ack(response_action="errors", errors=errors)
+        log.debug("The order canceled due to ValueError.")
+        return
+
+    if quantity < 0:
+        errors["input_tako_block"] = "Zero or more."
+        ack(response_action="errors", errors=errors)
+        log.debug("The order canceled due to negative.")
+        return
+
+    if quantity > takos:
+        errors["input_tako_block"] = f"You can order up to {takos} takos."
+        ack(response_action="errors", errors=errors)
+        log.debug(f"The order exceed {takos}.")
+        return
+    ack()
+    tako_slack = TakoSlack(user_id, None)
+    tako_slack.order(quantity)
+    try:
+        client.views_publish(
+            user_id=user_id,
+            view=create_home_view(user_id))
+        log.debug("Update home tab")
+    except Exception as e:
+        log.error(f"Error publishing home tab: {e}")
+
+
+@slack_app.action("show_history_modal")
+def show_history_modal(ack, body, client):
+    log.debug(f"{body['user']['id']} opened history modal.")
+    ack()
+    user_id = body["user"]["id"]
+    tako_slack = TakoSlack(user_id, None)
+    history_list = tako_slack.history(number=30)
+    history_str = "\n".join(history_list)
+    view = {
+        "type": "modal",
+        "title": {
+            "type": "plain_text",
+            "text": "History of Transactions"
+        },
+        "close": {
+            "type": "plain_text",
+            "text": "Close"
+        },
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "```" + history_str + "```"
+                }
+            }
+        ]
+    }
+    try:
+        client.views_open(
+            trigger_id=body["trigger_id"],
+            view=view
+        )
+    except Exception as e:
+        log.error(f"Error opening input_order_modal: {e}")
+
+
+@slack_app.action("show_story_modal")
+def show_story_modal(ack, body, client):
+    log.debug(f"{body['user']['id']} opened history modal.")
+    ack()
+    view = {
+        "type": "modal",
+        "title": {
+            "type": "plain_text",
+            "text": "Takoyaki Story"
+        },
+        "close": {
+            "type": "plain_text",
+            "text": "Close"
+        },
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "plain_text",
+                    "text": takoconfig.TAKO_STORY
+                }
+            }
+        ]
+    }
+    try:
+        client.views_open(
+            trigger_id=body["trigger_id"],
+            view=view
+        )
+    except Exception as e:
+        log.error(f"Error opening input_order_modal: {e}")
+
+
 class TakoSlack(TakoClient):
     def interpret(self, cmd):
         """Interpret command
@@ -48,9 +343,11 @@ class TakoSlack(TakoClient):
         if cmd == "info":
             messages.append(self.name_with_badge())
             messages.extend(self.balance())
-            messages.extend(self.transaction())
+            messages.append("Latest Transaction:")
+            messages.extend(["  " + x for x in self.transaction()])
             messages.append("")
-            messages.extend(self.top3())
+            messages.append("Top 3 owners:")
+            messages.extend(["  " + x for x in self.top3()])
             messages.append("")
             messages.extend(self.market())
         elif cmd.isdecimal():
@@ -121,15 +418,14 @@ class TakoSlack(TakoClient):
         if transaction:
             market = TakoMarket.get_area(transaction["date"])
             transaction_str = [
-                "Latest transaction:",
-                f"  Date: {market['date']}",
-                f"  Place: {market['area']}",
-                f"  Status: {transaction['status']}",
-                f"  Sales: {transaction['sales']}",
-                f"  Ordered: {transaction['quantity_ordered']}",
-                f"  In stock: {transaction['quantity_in_stock']}",
-                f"  Weather: {transaction['weather']}",
-                f"  Max: {market['sales']}",
+                f"Date: {market['date']}",
+                f"Place: {market['area']}",
+                f"Status: {transaction['status']}",
+                f"Sales: {transaction['sales']}",
+                f"Ordered: {transaction['quantity_ordered']}",
+                f"In stock: {transaction['quantity_in_stock']}",
+                f"Weather: {transaction['weather']}",
+                f"Max: {market['sales']}",
             ]
         else:
             transaction_str = []
@@ -190,17 +486,16 @@ class TakoSlack(TakoClient):
 
         Example
         -------
-        Top 3 owners:
-          id1001: 10000 JPY
-          id1002: 9000 JPY
-          id1003: 5000 JPY
+        id1001: 10000 JPY
+        id1002: 9000 JPY
+        id1003: 5000 JPY
         """
-        messages = ["Top 3 owners:"]
+        messages = []
         ranking = self.ranking()
         for i, owner in enumerate(ranking):
             if i == 3:
                 break
-            messages.append(f"  {owner['name']}: {owner['balance']} JPY")
+            messages.append(f"{owner['name']}: {owner['balance']} JPY")
 
         return messages
 
@@ -276,6 +571,42 @@ class TakoSlack(TakoClient):
                 log.warning(f"can't get weather forecast: {e}")
 
         return messages
+
+    def market_info(self):
+        """Show market
+
+        Returns
+        -------
+        messages : list of str
+
+        Example
+        -------
+        Place: 山形
+        Open: 2022-01-24 09:00 JST
+        Close: 2022-01-24 18:00 JST
+        Forecast: 24日 月曜日 山形\nくもり後晴れ明け方一時雪
+        06: 20%
+        12: 10%
+        18: 10%
+        """
+        next_place = []
+        forecast = []
+        area = TakoMarket.get_next_area()
+        if area["date"]:
+            next_place.append(f"Place: {area['area']}")
+            tz = (+9, "JST")
+            opening_time_str = self.astimezone(area['opening_datetime'], tz=tz)
+            closing_time_str = self.astimezone(area['closing_datetime'], tz=tz)
+            next_place.append(f"Open: {opening_time_str}")
+            next_place.append(f"Close: {closing_time_str}")
+            try:
+                forecast = self.get_weather_forecast(
+                    area["area"],
+                    area["date"])
+            except jma.JmaError as e:
+                log.warning(f"can't get weather forecast: {e}")
+
+        return next_place, forecast
 
     def help(self):
         """Show help

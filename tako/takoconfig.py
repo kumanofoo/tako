@@ -24,6 +24,28 @@ TAKOBOT = {
     "name": "Char",
 }
 
+TAKO_STORY = """
+You have to run a takoyaki's shop and make money.
+
+The cost of takoyaki is 40 yen per piece and the selling price is 50 yen.
+The number of takoyaki sold in a day depends on the weather:
+about 500 takoyakis sold on a sunny day,
+about 300 on a cloudy day and
+about 100 on a rainy or snowy day.
+So look carefully at the weather forecast for the next day and
+make up your mind how many you will make.
+Takoyaki does not last long, so all unsold takoyakis are discarded.
+The winner is the first person who starts with 5,000 yen and
+exceeds 30,000 yen.
+
+The takoyaki market opens at 9:00 a.m. every day.
+So you need to decide how many takoyaki to make, and order them by the time.
+The market closes at 18:00 p.m. and the sales are calculated.
+
+The place of market is changed every day and the next is announced at 9:00 a.m.
+You can decide how many to make to consider weather forecast in the place.
+"""
+
 
 def set_logging_level(envrion, name):
     """Set the threshold for logger to level and the format
