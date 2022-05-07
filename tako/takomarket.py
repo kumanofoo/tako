@@ -24,6 +24,10 @@ class TakoMarketNoAccountError(Exception):
     pass
 
 
+class SunriseSunsetError(Exception):
+    pass
+
+
 class TakoMarket:
     """The Tako shop
 
@@ -901,8 +905,8 @@ class TakoMarket:
                     self.cancel_and_refund(self.next_event["date"])
                     try:
                         today_sales, weather = self.total_up_sales()
-                    except jma.JmaError as e:
-                        log.waring(f"can't get weather data: {e}")
+                    except (jma.JmaError, SunriseSunsetError) as e:
+                        log.warning(f"can't get weather data: {e}")
                         time.sleep(15)
                         continue
 
@@ -1354,12 +1358,18 @@ class TakoMarket:
         meta = jma.PointMeta.get_point_meta(self.today_point)
         log.debug(f"{self.today_point}: {meta}")
         url = "https://api.sunrise-sunset.org/json"
-        r = requests.get(
-            f"{url}?"
-            f"lat={meta['lat']}&"
-            f"lng={meta['lng']}&"
-            "date=today&"
-            "formatted=0")
+        try:
+            r = requests.get(
+                f"{url}?"
+                f"lat={meta['lat']}&"
+                f"lng={meta['lng']}&"
+                "date=today&"
+                "formatted=0")
+            r.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            raise SunriseSunsetError(f"can't get sunrise-sunset time: {e}")
+        except requests.exceptions.SSLError as e:
+            raise SunriseSunsetError(f"can't get sunrise-sunset time: {e}")
         sun = json.loads(r.content)
         day_length_hour = float(sun['results']['day_length'])/3600
         sunshine_ratio = sunshine/(day_length_hour -

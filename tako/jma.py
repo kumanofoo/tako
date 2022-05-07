@@ -28,7 +28,7 @@ class JmaError(Exception):
 class Synop:
     """Get weather observations from SYNOP
     """
-    SYNOPDAY_URL = ("http://www.data.jma.go.jp/"
+    SYNOPDAY_URL = ("https://www.data.jma.go.jp/"
                     "obd/stats/data/mdrr/synopday/data1s.html")
     SYNOPDAY_LABELS = [
         ("pressure", "station_average", "hPa"),
