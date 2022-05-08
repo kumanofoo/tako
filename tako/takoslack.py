@@ -9,6 +9,7 @@ from threading import Event
 from slack_bolt import App
 from slack_bolt.error import BoltError
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+import tako
 from tako.takomarket import TakoMarket
 from tako import jma, takoconfig
 from tako.takoclient import TakoClient
@@ -142,6 +143,16 @@ def create_home_view(user_id):
                 "action_id": "show_story_modal"
             }
         ]
+    })
+    view["blocks"].append({
+        "type": "divider"
+    })
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f"_Version {tako.__version__}_"
+        }
     })
     return view
 
