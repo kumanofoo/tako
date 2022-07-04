@@ -13,10 +13,10 @@ if bot_token is None:
 app_token = os.environ.get("SLACK_APP_TOKEN")
 if app_token is None:
     log.warning("Environment variable 'SLACK_APP_TOKEN' is not defined")
-bot_channel = os.environ.get("SLACK_TAKO_CHANNEL")
-if bot_channel is None:
-    log.warning("Environment variable 'SLACK_TAKO_CHANNEL' is not defined")
-if bot_token and app_token:
+webhook_url = os.environ.get("SLACK_WEBHOOK_URL")
+if webhook_url is None:
+    log.warning("Environment variable 'SLACK_WEBHOOK_URL' is not defined")
+if bot_token and app_token and webhook_url:
     from tako.takoslack import TakoSlackBot
 else:
     TakoSlackBot = None
