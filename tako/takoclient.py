@@ -1,4 +1,6 @@
 #! /usr/bin/env python3
+
+from pathlib import Path
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -44,6 +46,8 @@ class TakoClient:
             if self.my_name:
                 TakoMarket.change_name(self.my_id, self.my_name)
                 log.debug(f"{self.my_id} already exists")
+            else:
+                self.my_name = TakoMarket.get_name(self.my_id)[1]
 
     def astimezone(self, datetime_utc, tz=(+9, "JST")):
         """Convert datetime as UTC to string with timezone
@@ -347,6 +351,8 @@ class TakoCommand(TakoClient):
         Example
         -------
         This season is over. And next season has begun.
+        You was 3rd with 31000 JPY.
+
         One : 35000 JPY
          ⭐🦑🐙
         Two : 33000 JPY\n"
@@ -357,11 +363,17 @@ class TakoCommand(TakoClient):
         The following is the close to the target.
         Four : 29000 JPY
          🦑🦑🦑🦑🦑🦑🦑🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
-
         Five : 29000 JPY
         """
         texts = []
         texts.append("This season is over. And next season has begun.")
+        date = transaction["date"]
+        owner_record = TakoMarket.get_owner_records(self.my_id)[date]
+        balance = owner_record["balance"]
+        rank = owner_record["rank"]
+        suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
+        texts.append(f"You was {rank}{suffix} with {balance} JPY.")
+        texts.append("")
         balance = -float("inf")
         records = TakoMarket.get_records(
             date_jst=transaction["date"],
@@ -432,15 +444,25 @@ class TakoCommand(TakoClient):
         """
         texts = []
         transactions = TakoMarket.get_transaction(self.my_id)
-
-        texts.append("Date       Area     weather "
-                     "Ordered In stock Sales/max   Status  ")
-        texts.append("-"*66)
+        header = ["Date       Area     weather "
+                  "Ordered In stock Sales/max   Status  ",
+                  "-"*66]
+        texts.extend(header)
+        records = TakoMarket.get_owner_records(self.my_id)
         for n, t in enumerate(sorted(transactions,
                               key=lambda x: x["date"],
                               reverse=reverse)):
             if n == number:
                 break
+            if t['status'] == "closed_and_restart":
+                if n > 0:
+                    record = records[t['date']]
+                    rank = record['rank']
+                    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank, "th")
+                    balance = record['balance']
+                    texts.append("")
+                    texts.extend(header)
+                    texts.append(f"You was {rank}{suffix} with {balance} JPY.")
             area = t["area"] + "　"*(4-len(t["area"]))
             texts.append("%s %4s %-7s %7d %8d %5d/%-5d %-8s" % (
                 t['date'],
@@ -574,9 +596,14 @@ class TakoCommand(TakoClient):
 def takocmd():
     global my_id, my_name
 
+    if not Path.exists(Path(takoconfig.TAKO_DB)):
+        print(f"{takoconfig.TAKO_DB}: No such database")
+        exit(1)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--id",  help="Owner ID")
     parser.add_argument("-n", "--name",  help="Owner name")
+    parser.add_argument("--delete",  help="Delete owner")
     args = parser.parse_args()
 
     if args.id:
@@ -584,6 +611,16 @@ def takocmd():
 
     if args.name:
         my_name = args.name
+
+    if args.delete:
+        result = TakoMarket.delete_account(args.delete)
+        if result == args.delete:
+            pass
+        elif result is None:
+            print(f"{args.delete} is not found")
+        else:
+            print("Somthing is wrong.")
+        exit(0)
 
     tc = TakoCommand(my_id, my_name)
     print(f"ID: {tc.my_id}, Display name: {tc.my_name}")

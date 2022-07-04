@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from tako.takoclient import TakoClient
 from tako import takoconfig
 from tako.takomarket import TakoMarket
-from tests.takodebug import debugcmd
+from tests.takodebug import DebugClient
 
 my_id = "MSN-02"
 my_name = "ZEONG"
@@ -139,8 +139,7 @@ def test_takocommand():
         "",
         "quit",
     ]
-    expected = r"""ID: id10000, Display name: cmdtest
-Ordered 125 tako
+    expected = r"""Ordered 125 tako
 next Midnight
 Ordered 156 tako
 next Midnight
@@ -158,10 +157,12 @@ Ordered 500 tako
 next Midnight
 Ordered 500 tako
 next Midnight
-cmdtest 🐙
+name10000 🐙
 Balance: 5000 JPY at 1970-01-01 12:00 JST
 This season is over. And next season has begun.
-cmdtest : 33820 JPY
+You was 1st🐙 with 33820 JPY.
+
+name10000 : 33820 JPY
 🐙
 
 The following is the close to the target.
@@ -174,7 +175,7 @@ Status: closed '1970-01-10' with 25000 JPY sales at 1970-01-01 12:00 JST
         You sold 500 tako. (Ordered: 500, In stock: 500, Max: 500)
 
 Top 3 owners
-cmdtest: 5000 JPY
+name10000: 5000 JPY
 name10001: 5000 JPY
 name10002: 5000 JPY
 
@@ -188,13 +189,13 @@ Maybe Sunny
 10% 20% 30%
 Ordered 125 tako
 next Midnight
-cmdtest 🐙
+name10000 🐙
 Balance: 6250 JPY at 1970-01-01 12:00 JST
 Status: closed '1970-01-11' with 6250 JPY sales at 1970-01-01 12:00 JST
         You sold 125 tako. (Ordered: 125, In stock: 125, Max: 500)
 
 Top 3 owners
-cmdtest: 6250 JPY
+name10000: 6250 JPY
 name10001: 5000 JPY
 name10002: 5000 JPY
 
@@ -207,9 +208,10 @@ Maybe Sunny
 06  12  18
 10% 20% 30%
 """
+    dc = DebugClient(owners=5)
     io = StringIO()
     sys.stdout = io
-    debugcmd(command)
+    dc.interpret(command)
     sys.stdout = sys.__stdout__
     expected_list = expected.split("\n")
     actual_list = io.getvalue().split("\n")

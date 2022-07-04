@@ -173,6 +173,7 @@ get_records_closed_and_restart = {
 
 @pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
                     "os.environ.get('SLACK_BOT_TOKEN') is None",
+                    "os.environ.get('SLACK_WEBHOOK_URL') is None",
                     reason="Need environment variables of Slack")
 @pytest.mark.freeze_time(datetime(2021, 10, 10, tzinfo=JST))
 @pytest.mark.parametrize("param, restart, expected", publish_parameters)

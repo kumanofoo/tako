@@ -7,19 +7,25 @@ import threading
 import time
 from threading import Event
 from slack_bolt import App
-from slack_bolt.error import BoltError
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+from slack_sdk import WebhookClient
+from slack_sdk.errors import SlackApiError
 import tako
-from tako.takomarket import TakoMarket
+from tako.takomarket import TakoMarket, TakoMarketNoAccountError
 from tako import jma, takoconfig
 from tako.takoclient import TakoClient
 from tako.takotime import JST
 
 log = logging.getLogger(__name__)
 
-bot_channel = os.environ.get("SLACK_TAKO_CHANNEL")
+SLACK_WEBHOOK_URL = os.environ.get("SLACK_WEBHOOK_URL")
+slack_webhook = None
+if SLACK_WEBHOOK_URL:
+    slack_webhook = WebhookClient(SLACK_WEBHOOK_URL)
 slack_app = App()
 slack_handler = SocketModeHandler(slack_app)
+
+DEFAULT_DISPLAY_NAME = "Ray"
 
 
 @slack_app.event("message")
@@ -30,8 +36,49 @@ def tako_reception(ack, say, message):
 
     arg = message["text"]
     user_id = message["user"]
-    user_info = get_user_info(user_id)
-    user_name = user_info["profile"]["display_name"]
+    user_name = None
+    try:
+        _ = TakoMarket.get_name(user_id)
+    except TakoMarketNoAccountError:
+        # New user
+        cmd = arg.split()
+        if len(cmd) == 0:
+            return
+        if cmd[0] == "JOIN":
+            user_name = arg.lstrip("JOIN").strip()
+            if user_name == "":
+                user_info = get_user_info(user_id)
+                if user_info:
+                    user_name = user_info["profile"]["display_name"]
+                    if user_name == "":
+                        user_name = user_info["profile"]["real_name"]
+                if user_name == "":
+                    log.warning("can't get user name")
+                    user_name = DEFAULT_DISPLAY_NAME
+            _ = TakoSlack(user_id, user_name)
+            say(f"Thank you for joinging us, {user_name}!"
+                " If you need something, try to enter 'help'.")
+            return
+        else:
+            say("Hi there! I don't think we've met before.\n"
+                "Please try to use the command: JOIN [display name].\n"
+                "You can also use 'JOIN' without 'display name'"
+                " if you want to use SLACK DISPLAY NAME.")
+            return
+    # Delete account
+    if arg == "DELETE":
+        say("If you would like to delete your Takoyaki account, "
+            "enter 'DELETE DELETE'.")
+        return
+    if arg == "DELETE DELETE":
+        if TakoMarket.delete_account(user_id) == user_id:
+            say("Your Takoyaki account was deleted.")
+            log.info(f"{user_id}'s account was deleted")
+        else:
+            say("Your Takoyaki account was NOT able to be deleted.")
+            log.warning(f"can't delete account {user_id}")
+        return
+    # Interpret command
     tako_slack = TakoSlack(user_id, user_name)
     msg = tako_slack.interpret(arg)
     say("```" + "\n".join(msg) + "```")
@@ -77,6 +124,21 @@ def create_home_view(user_id):
     view["blocks"].append({
         "type": "divider"
     })
+    t = tako_slack.latest_transaction()
+    if t:
+        if t["status"] == "closed_and_restart":
+            date = t["date"]
+            record = TakoMarket.get_owner_records(user_id).get[date]
+            balance = record["balance"]
+            rank = record["rank"]
+            suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
+            view["blocks"].append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*You was {rank}{suffix} with {balance} JPY.*"
+                }
+            })
     transaction_list = ["*Latest transaction*"]
     transaction_list.extend(tako_slack.transaction())
     transaction_str = "\n".join(transaction_list)
@@ -157,11 +219,90 @@ def create_home_view(user_id):
     return view
 
 
+def create_new_user_home_view(user_id):
+    view = {}
+    view["type"] = "home"
+    view["blocks"] = []
+
+    user_info = get_user_info(user_id)
+    user_name = None
+    if user_info:
+        user_name = user_info["profile"]["display_name"]
+        if user_name == "":
+            user_name = user_info["profile"]["real_name"]
+    if user_name is None:
+        log.warning("can't get user name")
+        user_name = "there"
+
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": f"Hey {user_name}!\n\nWould you like to TAKOYAKI?",
+            "emoji": True
+        }
+    })
+
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "plain_text",
+            "text": "You are given 5000 yen at the start."
+            " Your goal is to make 30000 yen faster than other shops.",
+            "emoji": True
+        }
+    })
+
+    view["blocks"].append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": "*Daily Routine at Takoyaki Shop*\n"
+            "1. At 9:00 a.m. the next place of the market is announced.\n"
+            "2. By tomorrow 9:00 a.m. decide how many takoyakis to make"
+            " referring to the weather forecast.\n"
+            "3. At 6:00 p.m. the market is closed.\n"
+            "4. Decide how many tomorrow after checking your balance and"
+            " the weather forecast."
+        }
+    })
+
+    view["blocks"].append({
+        "type": "actions",
+        "elements": [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Join you!"
+                },
+                "style": "primary",
+                "action_id": "input_join_modal",
+            },
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "Story"
+                },
+                "action_id": "show_story_modal",
+            },
+        ]
+    })
+    return view
+
+
 @slack_app.event("app_home_opened")
 def tako_home_open(client, event):
     log.debug(f"{event['user']} opened home tab.")
     user_id = event["user"]
-    view = create_home_view(user_id)
+    try:
+        _ = TakoMarket.get_name(user_id)
+        view = create_home_view(user_id)
+    except TakoMarketNoAccountError:
+        # New user
+        view = create_new_user_home_view(user_id)
+
     try:
         client.views_publish(
             user_id=event["user"],
@@ -342,6 +483,76 @@ def show_story_modal(ack, body, client):
         log.error(f"Error opening input_order_modal: {e}")
 
 
+@slack_app.action("input_join_modal")
+def input_join_modal(ack, body, client):
+    log.debug(f"{body['user']['id']} opened input_join modal.")
+    ack()
+    user_id = body["user"]["id"]
+    user_name = None
+    user_info = get_user_info(user_id)
+    if user_info:
+        user_name = user_info["profile"]["display_name"]
+        if user_name == "":
+            user_name = user_info["profile"]["real_name"]
+    if user_name is None:
+        log.warning("can't get user name")
+        user_name = DEFAULT_DISPLAY_NAME
+    view = {
+        "type": "modal",
+        "callback_id": "join_result",
+        "title": {
+            "type": "plain_text",
+            "text": "Join TAKOYAKI"
+        },
+        "submit": {
+            "type": "plain_text",
+            "text": "Submit",
+        },
+        "close": {
+            "type": "plain_text",
+            "text": "Close"
+        },
+        "blocks": [
+            {
+                "type": "input",
+                "block_id": "input_name_block",
+                "element": {
+                    "type": "plain_text_input",
+                    "action_id": "submit_name",
+                    "initial_value": f"{user_name}",
+                },
+                "label": {
+                    "type": "plain_text",
+                    "text": "Enter your display name."
+                }
+            }
+        ]
+    }
+    try:
+        client.views_open(
+            trigger_id=body["trigger_id"],
+            view=view
+        )
+    except Exception as e:
+        log.error(f"Error opening input_join_modal: {e}")
+
+
+@slack_app.view("join_result")
+def join_result(ack, body, client, view):
+    user_id = body["user"]["id"]
+    input_name_block = view["state"]["values"]["input_name_block"]
+    display_name = input_name_block["submit_name"]["value"]
+    _ = TakoSlack(user_id, display_name)
+    ack()
+    try:
+        client.views_publish(
+            user_id=user_id,
+            view=create_home_view(user_id))
+        log.debug("Update home tab")
+    except Exception as e:
+        log.error(f"Error publishing home tab: {e}")
+
+
 class TakoSlack(TakoClient):
     def interpret(self, cmd):
         """Interpret command
@@ -460,18 +671,29 @@ class TakoSlack(TakoClient):
         -----------------------------------
         """
         transactions = TakoMarket.get_transaction(self.my_id)
-
+        records = TakoMarket.get_owner_records(self.my_id)
+        header = ["-"*35,
+                  "DATE       Place  WX",
+                  "ORD STK SALES/MAX STS",
+                  "-"*35]
         messages = []
-        messages.append("-"*35)
-        messages.append("DATE       Place  WX")
-        messages.append("ORD STK SALES/MAX STS")
-        messages.append("-"*35)
+        messages.extend(header)
         for n, t in enumerate(sorted(transactions,
                               key=lambda x: x["date"],
                               reverse=reverse)):
             if n == number:
                 break
-            area = t["area"] + "　"*(4-len(t["area"]))
+            if t['status'] == "closed_and_restart":
+                if n > 0:
+                    record = records[t['date']]
+                    rank = record['rank']
+                    suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
+                    balance = record['balance']
+                    messages.append("")
+                    messages.extend(header)
+                    messages.append(f"You was {rank}{suffix}"
+                                    f" with {balance} JPY.")
+            area = t['area'] + "　"*(4-len(t['area']))
             messages.append(
                 "%s %4s %-7s" % (
                     t['date'],
@@ -630,6 +852,7 @@ class TakoSlack(TakoClient):
         messages.append("info : Show Tako Market Information.")
         messages.append("<Number> : Order tako.")
         messages.append("history : Show History of Transactions.")
+        messages.append("DELETE : Delete Takoyaki account.")
         messages.append("help : Show this message.")
 
         return messages
@@ -643,9 +866,8 @@ def get_user_info(user):
             user_info = result["user"]
         else:
             log.warning(f"can't get user info: {result['error']}")
-    except BoltError as err:
+    except SlackApiError as err:
         log.warning(f"can't get user info: {err}")
-
     return user_info
 
 
@@ -842,24 +1064,21 @@ class TakoSlackBot():
         ----------
         text: str
         """
-        try:
-            result = slack_app.client.chat_postMessage(
-                channel=bot_channel,
-                text=text)
-            if result["ok"] is False:
-                log.warning(f"can't send message: {result['error']}")
-        except BoltError as err:
-            log.warning(f"can't send message: {err}")
+        response = slack_webhook.send(text=text)
+        if response.status_code != 200 or response.body != "ok":
+            log.warning(
+                f"can't send message: status code={response.status_code},"
+                f"body={response.boday}")
 
     def bot(self):
         """Start to run slack bot
             Stop bot to send SIGTERM
         """
         news = None
-        if bot_channel:
+        if slack_webhook:
             news = News()
         else:
-            log.warning("Slack channel is not defined.")
+            log.warning("Slack incomming webhook is not defined.")
             log.warning("Takoyaki News is closed.")
 
         try:

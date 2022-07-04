@@ -1,23 +1,37 @@
 # Takoyaki
-You have to run a takoyaki's shop and make money.
+<img alt="Slack Takoyaki Shop" src="./img/screenshot_home.png">
 
-The cost of takoyaki is 40 yen per piece and the selling price is 50 yen.
-The number of takoyaki sold in a day depends on the weather:
-about 500 takoyakis sold on a sunny day,
-about 300 on a cloudy day and
-about 100 on a rainy or snowy day.
-So look carefully at the weather forecast for the next day and
-make up your mind how many you will make.
+
+You will run a takoyaki shop.
+You are given 5000 yen at the start.
+Its goal is to make 30000 yen faster than other shops.
+When someone reaches 30000 yen,
+the series of markets are once closed.
+And then it is reset to 5000 yen and new market starts.
+
+The cost of one takoyaki is 40 yen and the selling price is 50 yen.
+The number of takoyakis sold in a day depends on the weather.
+About 500 takoyakis would sell on a sunny day.
+About 300 on a cloudy day, and about 100 on a rainy or snowy day.
+So you should look carefully at the weather forecast
+for the next day before making up your mind
+about how many you will make.
 Takoyaki does not last long, so all unsold takoyakis are discarded.
-The winner is the first person who starts with 5,000 yen and exceeds 30,000 yen.
 
+The place of the market is changed every day and
+the next is announced at 9:00 a.m.
 The takoyaki market opens at 9:00 a.m. every day.
-So you need to decide how many takoyaki to make, and order them by the time.
-The market closes at 18:00 p.m. and the sales are calculated. 
+By the opening time, you need to decide how many takoyakis to make.
+Please remember to check the weather forecast.
+It closes at 6:00 p.m. and the sales are calculated.
 
-The place of market is changed every day and the next is announced at 9:00 a.m.
-You can decide how many to make to consider weather forecast in the place.
+Summary of Timeline:
+1. At 9:00 a.m. the next place of the market is announced.
+2. By tomorrow 9:00 a.m. decide how many takoyakis to make referring to the weather forecast.
+3. At 6:00 p.m. the market is closed.
+4. Decide how many tomorrow after checking your balance and the weather forecast.
 
+Command Line Client:
 ```Shell
 ID: RB-79, Display name: Ball
 tako[125]:
@@ -25,8 +39,8 @@ Balance: 5000 JPY at 2022-01-31 09:38 JST
 
 Top 3 owners
 Ball: 5000 JPY
-Char: 0 JPY
-Mirai: 0 JPY
+Char: 5000 JPY
+Mirai: 5000 JPY
 
 Next: 潮岬
 Open: 2022-02-01 09:00 JST
@@ -44,8 +58,8 @@ Status: ordered 125 tako at 2022-01-31 10:03 JST
 
 Top 3 owners
 Ball: 5000 JPY
-Char: 0 JPY
-Mirai: 0 JPY
+Char: 5000 JPY
+Mirai: 5000 JPY
 
 Next: 潮岬
 Open: 2022-02-01 09:00 JST
@@ -74,12 +88,13 @@ $ pip install .[dev]
 ```
 $ sudo bash install.sh install
 ```
-If you are going to run the slackbot, you will need to set 'App-level token', 'Bot token' and 'Channel ID' in `/etc/default/takoserver`.
-The channel is used for the market news feeds.
+If you are going to run the slackbot, you will need to set 'App-level token',
+'Bot token' and 'Webhook URL' in `/etc/default/takoserver`.
+The webhook is used for the market news feeds.
 ```Shell
 SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
-SLACK_TAKO_CHANNEL=SSSSSSSSSSS
+SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
 ```
 
 ## Configuration
@@ -96,9 +111,42 @@ Slackbot to Tako market is required two tokens: App-level token and Bot token.
 export SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
 ```
-And also Slack channel ID for the market news feeds is required.
+And also Incomming Webhook URL for the market news feeds is required.
 ```Shell
-export SLACK_TAKO_CHANNEL=CXXXXXXXX
+export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
+```
+
+The following is an app manifest file 'App_Manifest.yaml' for creating new slack app.
+```YAML
+display_information:
+  name: TAKO
+  description: Takoyaki Shop
+  background_color: "#2c2d30"
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: false
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: TAKO
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - im:history
+      - incoming-webhook
+      - users:read
+      - chat:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_home_opened
+      - message.im
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
 ```
 
 
@@ -118,7 +166,7 @@ optional arguments:
   -h, --help    show this help message and exit
   -d, --daemon
 ```
-You can set logging level using the TAKOMARKET_DEBUG environment variable.
+You can set logging level using the TAKO_LOGGING_LEVEL environment variable.
 ```Shell
 $ export TAKO_LOGGING_LEVEL=debug
 $ takomarket -d
@@ -131,7 +179,7 @@ The ID of bot is "MS-06S" and the name is "Char".
 ```Shell
 $ takobot
 ```
-You can set logging level using the TAKOBOT_DEBUG environment variable.
+You can set logging level using the TAKO_LOGGING_LEVEL environment variable.
 ```Shell
 $ TAKO_LOGGING_LEVEL=info takobot
 ```
@@ -141,7 +189,7 @@ Run a takoyaki slackbot, which serves user interface and news feeds.
 ```Shell
 $ export SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyy
 $ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
-$ export SLACK_TAKO_CHANNEL=CXXXXXXXX
+$ export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
 $ takoslackbot
 ```
 
@@ -169,10 +217,10 @@ tako[125]: quit
 
 ### `takoserver`
 You can run takomarket, takobot and takoslackbot all at once.
-```
+```Shell
 $ export SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyy
 $ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
-$ export SLACK_TAKO_CHANNEL=CXXXXXXXX
+$ export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
 $ takoserver
 ```
 You can set logging level using the TAKO_LOGGING_LEVEL environment variable.

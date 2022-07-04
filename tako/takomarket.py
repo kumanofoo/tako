@@ -565,6 +565,8 @@ class TakoMarket:
         ----------
         date_jst : str
         top : int
+        winnter : bool
+            only owners reach target.
 
         Returns
         -------
@@ -629,6 +631,53 @@ class TakoMarket:
             return ret
 
     @staticmethod
+    def get_owner_records(owner_id):
+        """Get records by owner
+
+        Parameters
+        ----------
+        owner_id : str
+
+        Returns:
+        records : dict
+            {
+                "YYYY-MM-DD": {
+                        "balance": int,
+                        "target": int,
+                        "ranking": int,
+                },
+                ....,
+            }
+        """
+        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
+            rows = list(conn.execute(
+                """
+                SELECT
+                    date_jst, balance, rank, target
+                FROM (
+                    SELECT
+                        date_jst, owner_id,
+                        balance, target,
+                        RANK() OVER(
+                            PARTITION BY date_jst
+                            ORDER BY balance DESC
+                        ) AS rank
+                    FROM
+                        records
+                )
+                WHERE
+                    owner_id = ?
+                """,
+                (owner_id,)))
+
+            records = {}
+            for row in rows:
+                records[row[0]] = dict(zip(
+                    ["balance", "rank", "target"],
+                    row[1:]))
+            return records
+
+    @staticmethod
     def open_account(owner_id, name=None):
         """Open new account
 
@@ -663,6 +712,58 @@ class TakoMarket:
                      strftime('%Y-%m-%dT%H:%M:%f', 'now'))
                 """,
                 (owner_id, takoconfig.SEED_MONEY))
+
+    @staticmethod
+    def delete_account(owner_id):
+        """Delete account
+
+        Parameters
+        ----------
+        owner_id : str
+            Owner ID
+
+        Returns
+        -------
+        owner_id : str
+            If deleting failed, return None
+        """
+        if not owner_id:
+            return None
+        try:
+            _ = TakoMarket.get_name(owner_id)
+        except TakoMarketNoAccountError:
+            return None
+
+        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
+            conn.execute(
+                """
+                DELETE FROM
+                    records
+                WHERE
+                    owner_id = ?
+                """, (owner_id,))
+            conn.execute(
+                """
+                DELETE FROM
+                    tako_transaction
+                WHERE
+                    owner_id = ?
+                """, (owner_id,))
+            conn.execute(
+                """
+                DELETE FROM
+                    tako
+                WHERE
+                    owner_id = ?
+                """, (owner_id,))
+            conn.execute(
+                """
+                DELETE FROM
+                    accounts
+                WHERE
+                    owner_id = ?
+                """, (owner_id,))
+        return owner_id
 
     @staticmethod
     def change_name(owner_id, name):
