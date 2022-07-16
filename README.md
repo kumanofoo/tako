@@ -19,7 +19,7 @@ about how many you will make.
 Takoyaki does not last long, so all unsold takoyakis are discarded.
 
 The place of the market is changed every day and
-the next is announced at 9:00 a.m.
+the next is announced at 9:00 a.m. the day before.
 The takoyaki market opens at 9:00 a.m. every day.
 By the opening time, you need to decide how many takoyakis to make.
 Please remember to check the weather forecast.
@@ -92,6 +92,7 @@ If you are going to run the slackbot, you will need to set 'App-level token',
 'Bot token' and 'Webhook URL' in `/etc/default/takoserver`.
 The webhook is used for the market news feeds.
 ```Shell
+TAKO_DB=/opt/takoserver/tako.db
 SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
 SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'

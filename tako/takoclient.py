@@ -220,8 +220,23 @@ class TakoCommand(TakoClient):
             if quantity >= 0 and quantity <= max_quantity:
                 if self.order(quantity):
                     response.append(f"Ordered {quantity} tako")
-        elif cmd == "history":
-            response.extend(self.history())
+        elif cmd.startswith("history"):
+            c = cmd.split()
+            if len(c) > 1:
+                if c[1] == "all":
+                    num = None
+                else:
+                    try:
+                        num = int(c[1])
+                    except ValueError:
+                        log.debug(f"Invalid history number: '{c[1]}'")
+                        num = -1
+            else:
+                num = takoconfig.HISTORY_COUNT
+            if num == -1:
+                response.append("Usage: history [number]")
+            else:
+                response.extend(self.history(number=num))
         elif cmd == "help" or cmd == "?":
             response.extend(self.help())
         elif cmd == "quit":
@@ -351,7 +366,7 @@ class TakoCommand(TakoClient):
         Example
         -------
         This season is over. And next season has begun.
-        You was 3rd with 31000 JPY.
+        You were 3rd with 31000 JPY.
 
         One : 35000 JPY
          ⭐🦑🐙
@@ -372,7 +387,7 @@ class TakoCommand(TakoClient):
         balance = owner_record["balance"]
         rank = owner_record["rank"]
         suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
-        texts.append(f"You was {rank}{suffix} with {balance} JPY.")
+        texts.append(f"You were {rank}{suffix} with {balance} JPY.")
         texts.append("")
         balance = -float("inf")
         records = TakoMarket.get_records(
@@ -454,15 +469,6 @@ class TakoCommand(TakoClient):
                               reverse=reverse)):
             if n == number:
                 break
-            if t['status'] == "closed_and_restart":
-                if n > 0:
-                    record = records[t['date']]
-                    rank = record['rank']
-                    suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank, "th")
-                    balance = record['balance']
-                    texts.append("")
-                    texts.extend(header)
-                    texts.append(f"You was {rank}{suffix} with {balance} JPY.")
             area = t["area"] + "　"*(4-len(t["area"]))
             texts.append("%s %4s %-7s %7d %8d %5d/%-5d %-8s" % (
                 t['date'],
@@ -473,6 +479,14 @@ class TakoCommand(TakoClient):
                 t['sales']/takoconfig.SELLING_PRICE,
                 t['max_sales'],
                 t['status']))
+
+            if t['status'] == "closed_and_restart":
+                record = records[t['date']]
+                rank = record['rank']
+                suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank, "th")
+                balance = record['balance']
+                texts.append(
+                    " "*11 + f"You were {rank}{suffix} with {balance} JPY.")
         texts.append("-"*66)
         return texts
 

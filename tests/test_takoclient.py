@@ -160,7 +160,7 @@ next Midnight
 name10000 🐙
 Balance: 5000 JPY at 1970-01-01 12:00 JST
 This season is over. And next season has begun.
-You was 1st🐙 with 33820 JPY.
+You were 1st🐙 with 33820 JPY.
 
 name10000 : 33820 JPY
 🐙

@@ -128,7 +128,7 @@ def create_home_view(user_id):
     if t:
         if t["status"] == "closed_and_restart":
             date = t["date"]
-            record = TakoMarket.get_owner_records(user_id).get[date]
+            record = TakoMarket.get_owner_records(user_id).get(date)
             balance = record["balance"]
             rank = record["rank"]
             suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
@@ -136,7 +136,7 @@ def create_home_view(user_id):
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*You was {rank}{suffix} with {balance} JPY.*"
+                    "text": f"*You were {rank}{suffix} with {balance} JPY.*"
                 }
             })
     transaction_list = ["*Latest transaction*"]
@@ -691,7 +691,7 @@ class TakoSlack(TakoClient):
                     balance = record['balance']
                     messages.append("")
                     messages.extend(header)
-                    messages.append(f"You was {rank}{suffix}"
+                    messages.append(f"You were {rank}{suffix}"
                                     f" with {balance} JPY.")
             area = t['area'] + "　"*(4-len(t['area']))
             messages.append(

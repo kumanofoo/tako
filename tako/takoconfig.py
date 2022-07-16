@@ -42,12 +42,14 @@ about how many you will make.
 Takoyaki does not last long, so all unsold takoyakis are discarded.
 
 The place of the market is changed every day and
-the next is announced at 9:00 a.m.
+the next is announced at 9:00 a.m. the day before.
 The takoyaki market opens at 9:00 a.m. every day.
 By the opening time, you need to decide how many takoyakis to make.
 Please remember to check the weather forecast.
 It closes at 6:00 p.m. and the sales are calculated.
 """
+
+HISTORY_COUNT = 30
 
 
 def set_logging_level(envrion, name):
