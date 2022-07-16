@@ -419,7 +419,7 @@ def show_history_modal(ack, body, client):
     ack()
     user_id = body["user"]["id"]
     tako_slack = TakoSlack(user_id, None)
-    history_list = tako_slack.history(number=30)
+    history_list = tako_slack.history(number=takoconfig.HISTORY_COUNT)
     history_str = "\n".join(history_list)
     view = {
         "type": "modal",
@@ -579,7 +579,22 @@ class TakoSlack(TakoClient):
                 if self.order(quantity):
                     messages.extend([f"Ordered {quantity} tako"])
         elif cmd == "history":
-            messages.extend(self.history())
+            c = cmd.split()
+            if len(c) > 1:
+                if c[1] == "all":
+                    num = None
+                else:
+                    try:
+                        num = int(c[1])
+                    except ValueError:
+                        log.debug(f"Invalid history number: '{c[1]}'")
+                        num = -1
+            else:
+                num = takoconfig.HISTORY_COUNT
+            if num == -1:
+                messages.append("Usage: history [number]")
+            else:
+                messages.extend(self.history(number=num))
         elif cmd == "help" or cmd == "?":
             messages.extend(self.help())
 
@@ -683,16 +698,6 @@ class TakoSlack(TakoClient):
                               reverse=reverse)):
             if n == number:
                 break
-            if t['status'] == "closed_and_restart":
-                if n > 0:
-                    record = records[t['date']]
-                    rank = record['rank']
-                    suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
-                    balance = record['balance']
-                    messages.append("")
-                    messages.extend(header)
-                    messages.append(f"You were {rank}{suffix}"
-                                    f" with {balance} JPY.")
             area = t['area'] + "　"*(4-len(t['area']))
             messages.append(
                 "%s %4s %-7s" % (
@@ -706,6 +711,14 @@ class TakoSlack(TakoClient):
                     t['sales']/takoconfig.SELLING_PRICE,
                     t['max_sales'],
                     t['status']))
+
+            if t['status'] == "closed_and_restart":
+                record = records[t['date']]
+                rank = record['rank']
+                suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
+                balance = record['balance']
+                messages.append(
+                    f"You were {rank}{suffix} with {balance} JPY.")
         messages.append("-"*35)
 
         return messages

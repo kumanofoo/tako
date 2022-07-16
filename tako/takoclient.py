@@ -457,13 +457,13 @@ class TakoCommand(TakoClient):
         2022-01-22 帯広　　             100        0     0/0     ordered
         ------------------------------------------------------------------
         """
-        texts = []
         transactions = TakoMarket.get_transaction(self.my_id)
+        records = TakoMarket.get_owner_records(self.my_id)
         header = ["Date       Area     weather "
                   "Ordered In stock Sales/max   Status  ",
                   "-"*66]
+        texts = []
         texts.extend(header)
-        records = TakoMarket.get_owner_records(self.my_id)
         for n, t in enumerate(sorted(transactions,
                               key=lambda x: x["date"],
                               reverse=reverse)):
