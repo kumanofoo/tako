@@ -81,7 +81,10 @@ def tako_reception(ack, say, message):
     # Interpret command
     tako_slack = TakoSlack(user_id, user_name)
     msg = tako_slack.interpret(arg)
-    say("```" + "\n".join(msg) + "```")
+    if msg:
+        say("```" + "\n".join(msg) + "```")
+    else:
+        say(f"Unknown command: '{arg}'")
 
 
 def create_home_view(user_id):
@@ -578,7 +581,7 @@ class TakoSlack(TakoClient):
             if quantity >= 0 and quantity <= max_quantity:
                 if self.order(quantity):
                     messages.extend([f"Ordered {quantity} tako"])
-        elif cmd == "history":
+        elif cmd.startswith("history"):
             c = cmd.split()
             if len(c) > 1:
                 if c[1] == "all":
@@ -704,21 +707,24 @@ class TakoSlack(TakoClient):
                     t['date'],
                     area,
                     t['weather']))
-            messages.append(
-                "%3d %3d %5d/%-3d %-8s\n" % (
+            m = "%3d %3d %5d/%-3d %-8s" % (
                     t['quantity_ordered'],
                     t['quantity_in_stock'],
                     t['sales']/takoconfig.SELLING_PRICE,
                     t['max_sales'],
-                    t['status']))
+                    t['status'])
 
             if t['status'] == "closed_and_restart":
+                messages.append(m)
                 record = records[t['date']]
                 rank = record['rank']
                 suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
                 balance = record['balance']
                 messages.append(
-                    f"You were {rank}{suffix} with {balance} JPY.")
+                    f"You were {rank}{suffix} with {balance} JPY.\n")
+            else:
+                messages.append(m+"\n")
+
         messages.append("-"*35)
 
         return messages
