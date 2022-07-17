@@ -152,6 +152,8 @@ settings:
 
 
 ## Commands
+<img alt="Takoyaki Commands" src="./img/tako.svg">
+
 ### `takomarket`
 Run a takoyaki market server.
 It chooses a market place every day,
