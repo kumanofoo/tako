@@ -523,5 +523,27 @@ def test_takomarket(mocker):
     mktest.schedule(schedules_jst)
 
 
+def test_get_day_length_hour_today():
+    sunrize_sunset_pattern = [
+        (26.2167, 127.6667, "2022-07-01", "05:40", "19:26"),  # Naha
+        (33.5500, 133.5333, "2022-06-01", "04:57", "19:11"),  # Kochi
+        (35.5000, 134.2333, "2022-05-01", "05:12", "18:49"),  # Tottori
+        (34.6833, 135.4833, "2022-04-01", "05:46", "18:19"),  # Osaka
+        (34.9667, 138.3833, "2022-03-01", "06:16", "17:42"),  # Shizuoka
+        (27.0833, 142.1833, "2022-02-01", "06:17", "17:13"),  # Ogasawara
+        (38.2667, 140.8667, "2022-01-01", "06:53", "16:27"),  # Sendai
+        (43.0667, 141.3500, "2021-12-01", "06:46", "16:01"),  # Sapporo
+    ]
+    max_error = 2/60  # hour
+    tm = TakoMarket()
+    for (lat, lon, date, rising, setting) in sunrize_sunset_pattern:
+        rising_dt = datetime.fromisoformat(f"{date}T{rising}")
+        setting_dt = datetime.fromisoformat(f"{date}T{setting}")
+        dt_hours = (setting_dt - rising_dt).seconds/3600
+        with freezegun.freeze_time(f"{date} 10:10:00"):
+            day_length_hour = tm.get_day_length_hour_today(lat, lon)
+            assert abs(dt_hours - day_length_hour) < max_error
+
+
 if __name__ == "__main__":
     test_takomarket()

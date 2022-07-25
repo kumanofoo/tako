@@ -56,7 +56,7 @@ def tako_reception(ack, say, message):
                     log.warning("can't get user name")
                     user_name = DEFAULT_DISPLAY_NAME
             _ = TakoSlack(user_id, user_name)
-            say(f"Thank you for joinging us, {user_name}!"
+            say(f"Thank you for joining us, {user_name}!"
                 " If you need something, try to enter 'help'.")
             return
         else:

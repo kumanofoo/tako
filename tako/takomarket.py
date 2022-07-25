@@ -4,11 +4,10 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
 import time
-import requests
-import json
 import random
 import signal
 import logging
+import ephem
 from tako import takoconfig, jma, names
 from tako.takotime import TakoTime as tt
 from tako.takotime import JST
@@ -1432,6 +1431,33 @@ class TakoMarket:
                  f"today_sales: {today_sales}")
         return (today_sales, w['weather'])
 
+    def get_day_length_hour_today(self,
+                                  latitude,
+                                  longitude,
+                                  time_difference_from_utc=+9):
+        """Get day length today
+
+        Parameters
+        ----------
+            latitude : float
+            longitude : float
+            time_difference_from_utc : int
+
+        Returns
+        -------
+            day_length_hour : float
+        """
+        td = timedelta(hours=time_difference_from_utc)
+        today = (datetime.utcnow() + td).date()
+        midnigyt_utc = datetime.combine(today, datetime.min.time()) - td
+        point = ephem.Observer()
+        point.lat = str(latitude)
+        point.lon = str(longitude)
+        point.date = midnigyt_utc
+        sun = ephem.Sun()
+        day_length_day = point.next_setting(sun) - point.next_rising(sun)
+        return day_length_day*24
+
     def weather(self):
         """Get weather
 
@@ -1458,21 +1484,9 @@ class TakoMarket:
 
         meta = jma.PointMeta.get_point_meta(self.today_point)
         log.debug(f"{self.today_point}: {meta}")
-        url = "https://api.sunrise-sunset.org/json"
-        try:
-            r = requests.get(
-                f"{url}?"
-                f"lat={meta['lat']}&"
-                f"lng={meta['lng']}&"
-                "date=today&"
-                "formatted=0")
-            r.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            raise SunriseSunsetError(f"can't get sunrise-sunset time: {e}")
-        except requests.exceptions.SSLError as e:
-            raise SunriseSunsetError(f"can't get sunrise-sunset time: {e}")
-        sun = json.loads(r.content)
-        day_length_hour = float(sun['results']['day_length'])/3600
+        day_length_hour = self.get_day_length_hour_today(
+            meta['lat'],
+            meta['lng'])
         sunshine_ratio = sunshine/(day_length_hour -
                                    takoconfig.SUNSHINE_RATIO_CORRECTION_HOUR)
 
