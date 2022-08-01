@@ -1072,7 +1072,7 @@ class News:
 class TakoSlackBot():
     def __init__(self):
         self.exit_loop = Event()
-        self.bot_thrad = None
+        self.bot_thread = None
         self.bot_state = "runnable"
         self.interval_of_checking_news_sec = 60*30
 

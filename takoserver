@@ -5,8 +5,14 @@ TAKO_DB=/opt/takoserver/tako.db
 #SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
 #SLACK_TAKO_CHANNEL=SSSSSSSSSSS
 
+# To enable zulipbot, set email, API key, site URL and stream and uncomment the line below
+#ZULIP_EMAIL=xxxxx@yyyyy.zulipchat.com
+#ZULIP_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYZ012345
+#ZULIP_SITE=https://yyyyy.zulipchat.com
+#ZULIP_TAKO_STREAM="general:Takoyaki News"
+
 # 'debug', 'info', 'warning' (Default logging level is warning.) 
 #TAKO_LOGGING_LEVEL=debug
 
-#TAKOSERVER=market:bot:slackbot
+#TAKOSERVER=market:bot:slackbot:zulipbot
 #PYTHONDONTWRITEBYTECODE=1

@@ -88,15 +88,6 @@ $ pip install .[dev]
 ```
 $ sudo bash install.sh install
 ```
-If you are going to run the slackbot, you will need to set 'App-level token',
-'Bot token' and 'Webhook URL' in `/etc/default/takoserver`.
-The webhook is used for the market news feeds.
-```Shell
-TAKO_DB=/opt/takoserver/tako.db
-SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
-SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
-```
 
 ## Configuration
 ### SQLite3 database
@@ -150,6 +141,20 @@ settings:
   token_rotation_enabled: false
 ```
 
+### Zulipbot
+Zulipbot to Tako market is required three parameters.
+```Shell
+export ZULIP_EMAIL=xxxxx@yyyyy.zulipchat.com
+export ZULIP_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYZ012345
+export ZULIP_SITE=https://yyyyy.zulipchat.com
+```
+You can download these parameter when
+[create a bot]([https://zulip.com/help/add-a-bot-or-integration "Zulip Help center").
+
+And also a stream and a topic for market news feeds is required.
+```Shell
+export ZULIP_TAKO_STREAM="general:Takoyaki News"
+```
 
 ## Commands
 <img alt="Takoyaki Commands" src="./img/tako.svg">
@@ -169,7 +174,7 @@ optional arguments:
   -h, --help    show this help message and exit
   -d, --daemon
 ```
-You can set logging level using the TAKO_LOGGING_LEVEL environment variable.
+You can set logging level using the TAKO\_LOGGING\_LEVEL environment variable.
 ```Shell
 $ export TAKO_LOGGING_LEVEL=debug
 $ takomarket -d
@@ -182,7 +187,7 @@ The ID of bot is "MS-06S" and the name is "Char".
 ```Shell
 $ takobot
 ```
-You can set logging level using the TAKO_LOGGING_LEVEL environment variable.
+You can set logging level using the TAKO\_LOGGING\_LEVEL environment variable.
 ```Shell
 $ TAKO_LOGGING_LEVEL=info takobot
 ```
@@ -193,6 +198,16 @@ Run a takoyaki slackbot, which serves user interface and news feeds.
 $ export SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyy
 $ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
 $ export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
+$ takoslackbot
+```
+
+### `takozulipbot`
+Run a takoyaki zulipbot, which serves user interface and news feeds.
+```Shell
+$ export ZULIP_EMAIL=xxxxx@yyyyy.zulipchat.com
+$ export ZULIP_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYZ012345
+$ export ZULIP_SITE=https://yyyyy.zulipchat.com
+$ export ZULIP_TAKO_STREAM="general:Takoyaki News"
 $ takoslackbot
 ```
 
@@ -219,14 +234,18 @@ tako[125]: quit
 ```
 
 ### `takoserver`
-You can run takomarket, takobot and takoslackbot all at once.
+You can run takomarket, takobot, takoslackbot and takozulipbot all at once.
 ```Shell
 $ export SLACK_APP_TOKEN=xapp-1-XXXXXXXXXXX-0123456789012-yyyyyyyyyyyyyyyy
 $ export SLACK_BOT_TOKEN=xoxb-xxxxxxxxxxx-YYYYYYYYYYYYYYYYYYYYYYYY
 $ export SLACK_WEBHOOK_URL='https://hooks.slack.com/services/AAAAAAAAA/BBBBBBBBBBB/xxxxxxxxxxxxxxxxxxxxxxxx'
+$ export ZULIP_EMAIL=xxxxx@yyyyy.zulipchat.com
+$ export ZULIP_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYZ012345
+$ export ZULIP_SITE=https://yyyyy.zulipchat.com
+$ export ZULIP_TAKO_STREAM="general:Takoyaki News"
 $ takoserver
 ```
-You can set logging level using the TAKO_LOGGING_LEVEL environment variable.
+You can set logging level using the TAKO\_LOGGING\_LEVEL environment variable.
 ```Shell
 $ TAKO_LOGGING_LEVEL=debug takoserver
 ```

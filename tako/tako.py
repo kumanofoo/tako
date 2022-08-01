@@ -4,6 +4,7 @@ from threading import Event
 from tako.takomarket import TakoMarket
 from tako.takobot import Takobot
 from tako import takoconfig
+from tako.takozulip import TakoZulipBot
 
 log = takoconfig.set_logging_level("TAKO_LOGGING_LEVEL", "tako")
 
@@ -43,6 +44,11 @@ class TakoWorld:
         else:
             self.slackbot = None
 
+        if TakoZulipBot.check_environment_variables():
+            self.zulipbot = TakoZulipBot()
+        else:
+            self.zulipbot = None
+
     def signal_handlar(self, signum, frame):
         """Signal Handlar
             Request schedule thread to stop
@@ -56,8 +62,8 @@ class TakoWorld:
         log.debug(f"signal handlar received {signame}.")
         self.do_run.set()
 
-    def run(self, market=True, bot=True, slackbot=True):
-        """Run takobot, takomarket and slackbot
+    def run(self, market=True, bot=True, slackbot=True, zulipbot=True):
+        """Run takobot, takomarket, slackbot and zulipbot
         """
         for sig in [signal.SIGHUP, signal.SIGTERM, signal.SIGINT]:
             signal.signal(sig, self.signal_handlar)
@@ -71,10 +77,16 @@ class TakoWorld:
         if self.slackbot and slackbot:
             self.slackbot.run_bot()
             log.info("takoslackbot is running")
+        if self.zulipbot and zulipbot:
+            self.zulipbot.run_bot()
+            log.info("takozulipbot is running")
 
         if market or bot or (self.slackbot and slackbot):
             self.do_run.wait()  # wait for signal
 
+        if self.zulipbot and zulipbot:
+            self.zulipbot.stop_bot()
+            log.info("takozulipbot has stopped")
         if self.slackbot and slackbot:
             self.slackbot.stop_bot()
             log.info("takoslackbot has stopped")
@@ -102,13 +114,22 @@ def main():
             slackbot = True
         else:
             slackbot = False
+        if "zulipbot" in threads:
+            zulipbot = True
+        else:
+            zulipbot = False
     else:
         market = True
         bot = True
         slackbot = True
+        zulipbot = True
 
     tako = TakoWorld()
-    tako.run(market=market, bot=bot, slackbot=slackbot)
+    tako.run(
+        market=market,
+        bot=bot,
+        slackbot=slackbot,
+        zulipbot=zulipbot)
 
 
 if __name__ == "__main__":
