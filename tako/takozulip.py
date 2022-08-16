@@ -609,7 +609,7 @@ class TakoZulipBot:
                 continue
             if "error" in res["result"]:
                 if res["result"] == "http-error":
-                    log.warning("HTTP error feching events -- "
+                    log.warning("HTTP error fetching events -- "
                                 "probably a server restart")
                 else:
                     log.warning(f"Server returned error:\n{res['msg']}")
