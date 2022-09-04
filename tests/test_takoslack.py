@@ -79,7 +79,7 @@ def test_check_market(mocker, param, init, expected):
     create_text_mock = mocker.patch("tako.takoslack.News.create_text")
     area_history = parameter_maker(param)
     mocker.patch(
-        "tako.takomarket.TakoMarket.get_area_history",
+        "tako.takomarket.MarketDB.get_area_history",
         return_value=area_history)
     news = News()
     if init:
@@ -186,15 +186,15 @@ def test_create_text(mocker, param, restart, expected):
         {"name": "Four", "balance": 5000},
     ]
     mocker.patch(
-        "tako.takomarket.TakoMarket.condition_all",
+        "tako.takomarket.MarketDB.condition_all",
         return_value=condition_all)
     if restart:
         mocker.patch(
-            "tako.takomarket.TakoMarket.get_records",
+            "tako.takomarket.MarketDB.get_records",
             return_value=get_records_closed_and_restart)
     else:
         mocker.patch(
-            "tako.takomarket.TakoMarket.get_records",
+            "tako.takomarket.MarketDB.get_records",
             return_value={})
     news = News()
     area = parameter_maker([param])

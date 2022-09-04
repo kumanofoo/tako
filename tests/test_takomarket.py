@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta, timezone
 import time
 import logging
@@ -6,7 +5,7 @@ import freezegun
 import pytest
 import tempfile
 from pathlib import Path
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB, TakoMarket
 from tako.takomarket import TakoMarketNoAccountError, TakoMarketError
 from tako import takoconfig
 
@@ -15,8 +14,7 @@ JST = timezone(timedelta(hours=9))
 
 
 class TakoMarketTest:
-    def __init__(self, market, number_of_accounts):
-        self.mk = market
+    def __init__(self, number_of_accounts):
         self.owner = []
         self.create_owner(number_of_accounts)
         self.pre_tra = {}
@@ -28,10 +26,11 @@ class TakoMarketTest:
         self.transaction_values = ""
 
         tra = {}
-        for o in self.owner:
-            tra[o['owner_id']] = self.mk.get_transaction(o['owner_id'])
-            if not self.pre_tra.get(o['owner_id']):
-                self.pre_tra[o['owner_id']] = tra[o['owner_id']]
+        with MarketDB() as mdb:
+            for o in self.owner:
+                tra[o['owner_id']] = mdb.get_transaction(o['owner_id'])
+                if not self.pre_tra.get(o['owner_id']):
+                    self.pre_tra[o['owner_id']] = tra[o['owner_id']]
 
         for o in self.owner:
             for t in tra[o['owner_id']]:
@@ -80,7 +79,7 @@ class TakoMarketTest:
         self.pre_tra = tra
 
     def create_owner(self, number_of_accounts):
-        step = self.mk.seed_money/self.mk.cost_price/number_of_accounts
+        step = takoconfig.SEED_MONEY/takoconfig.COST_PRICE/number_of_accounts
         for i in range(0, number_of_accounts):
             o = {}
             o['owner_id'] = "id%06d" % i
@@ -90,143 +89,155 @@ class TakoMarketTest:
 
     def get_name(self):
         test_owner_id = "xxxyyyzzz"
-        c = self.mk.condition(test_owner_id)
-        assert c is None
-        try:
-            _ = self.mk.get_name(test_owner_id)
-        except TakoMarketNoAccountError:
-            pass
+        with MarketDB() as mdb:
+            c = mdb.condition(test_owner_id)
+            assert c is None
+            try:
+                _ = mdb.get_name(test_owner_id)
+            except TakoMarketNoAccountError:
+                pass
 
         for o in self.owner:
-            self.mk.open_account(o['owner_id'], name=o['name'])
-            actual = self.mk.condition(o['owner_id'])
+            with MarketDB() as mdb:
+                mdb.open_account(o['owner_id'], name=o['name'])
+            with MarketDB() as mdb:
+                actual = mdb.condition(o['owner_id'])
             assert o['owner_id'] == actual['owner_id']
-            assert self.mk.seed_money == actual['balance']
+            assert takoconfig.SEED_MONEY == actual['balance']
 
-        for o in self.owner:
-            actual = self.mk.get_name(o['owner_id'])[0]
-            assert o['owner_id'] == actual
-            actual = self.mk.get_name(o['owner_id'])[1]
-            assert o['name'] == actual
-            actual = self.mk.get_name(o['owner_id'])[2]
-            assert 0 == actual
+        with MarketDB() as mdb:
+            for o in self.owner:
+                actual = mdb.get_name(o['owner_id'])[0]
+                assert o['owner_id'] == actual
+                actual = mdb.get_name(o['owner_id'])[1]
+                assert o['name'] == actual
+                actual = mdb.get_name(o['owner_id'])[2]
+                assert 0 == actual
 
     def change_name(self):
         test_set = [
             ("apple", "red", "green"),
             ("banana", None, "yellow"),
         ]
-        for owner_id, name1, name2 in test_set:
-            c = self.mk.condition(owner_id)
+        with MarketDB() as mdb:
+            for owner_id, name1, name2 in test_set:
+                c = mdb.condition(owner_id)
+                assert c is None
+                with pytest.raises(TakoMarketNoAccountError):
+                    _ = mdb.get_name(owner_id)
+                mdb.open_account(owner_id, name=name1)
+                mdb.change_name(owner_id, name=name2)
+                actual = mdb.get_name(owner_id)[1]
+                assert name2 == actual
+
+            test_owner_id = "cherry"
+            c = mdb.condition(test_owner_id)
             assert c is None
             with pytest.raises(TakoMarketNoAccountError):
-                _ = self.mk.get_name(owner_id)
-            self.mk.open_account(owner_id, name=name1)
-            self.mk.change_name(owner_id, name=name2)
-            actual = self.mk.get_name(owner_id)[1]
-            assert name2 == actual
-
-        test_owner_id = "cherry"
-        c = self.mk.condition(test_owner_id)
-        assert c is None
-        with pytest.raises(TakoMarketNoAccountError):
-            _ = self.mk.get_name(test_owner_id)
-        self.mk.open_account(test_owner_id)
-        with pytest.raises(TakoMarketError):
-            self.mk.change_name(test_owner_id, name=None)
+                _ = mdb.get_name(test_owner_id)
+            mdb.open_account(test_owner_id)
+            with pytest.raises(TakoMarketError):
+                mdb.change_name(test_owner_id, name=None)
 
     def set_tako_quantity(self, date):
-        for o in self.owner:
-            balance = self.mk.condition(o['owner_id'])['balance']
-            self.mk.set_tako_quantity(o['owner_id'], date, o['quantity'])
-            t = self.mk.get_transaction(o['owner_id'], date)
-            assert len(t) == 1, f"expected: 1, actual: {len(t)}"
-            actual = t[0]
-            assert o['owner_id'] == actual['owner_id']
-            assert balance == actual['balance']
-            assert date == actual['date']
-            assert o['quantity'] == actual['quantity_ordered']
-            assert 0 == actual['cost']
-            assert 0 == actual['quantity_in_stock']
-            assert 0 == actual['sales']
-            assert "ordered" == actual['status']
+        with MarketDB() as mdb:
+            for o in self.owner:
+                balance = mdb.condition(o['owner_id'])['balance']
+                mdb.set_tako_quantity(o['owner_id'], date, o['quantity'])
+                t = mdb.get_transaction(o['owner_id'], date)
+                assert len(t) == 1, f"expected: 1, actual: {len(t)}"
+                actual = t[0]
+                assert o['owner_id'] == actual['owner_id']
+                assert balance == actual['balance']
+                assert date == actual['date']
+                assert o['quantity'] == actual['quantity_ordered']
+                assert 0 == actual['cost']
+                assert 0 == actual['quantity_in_stock']
+                assert 0 == actual['sales']
+                assert "ordered" == actual['status']
 
     def make_tako(self, date):
-        balances = dict([
-            (o['owner_id'], self.mk.condition(o['owner_id'])['balance'])
-            for o in self.owner
-        ])
-        self.mk.make_tako(date)
-        for o in self.owner:
-            t = self.mk.get_transaction(o['owner_id'], date)
-            assert len(t) == 1, f"expected: 1, actual: {len(t)}"
-            actual = t[0]
-            assert o['owner_id'] == actual['owner_id']
-            expected_cost = min(
-                int(self.mk.seed_money/self.mk.cost_price),
-                o['quantity'])*self.mk.cost_price
-            assert balances[o['owner_id']] - expected_cost == actual['balance']
-            assert date == actual['date']
-            assert o['quantity'] == actual['quantity_ordered']
-            assert expected_cost == actual['cost']
-            assert actual['quantity_in_stock'] == min(
-                int(self.mk.seed_money/self.mk.cost_price),
-                o['quantity'])
-            assert 0 == actual['sales']
-            assert "in_stock" == actual['status']
+        with MarketDB() as mdb:
+            balances = dict([
+                (o['owner_id'], mdb.condition(o['owner_id'])['balance'])
+                for o in self.owner
+            ])
+            mdb.make_tako(date)
+            for o in self.owner:
+                t = mdb.get_transaction(o['owner_id'], date)
+                assert len(t) == 1, f"expected: 1, actual: {len(t)}"
+                actual = t[0]
+                assert o['owner_id'] == actual['owner_id']
+                expected_cost = min(
+                    int(takoconfig.SEED_MONEY/takoconfig.COST_PRICE),
+                    o['quantity'])*takoconfig.COST_PRICE
+                assert (balances[o['owner_id']] - expected_cost
+                        == actual['balance'])
+                assert date == actual['date']
+                assert o['quantity'] == actual['quantity_ordered']
+                assert expected_cost == actual['cost']
+                assert actual['quantity_in_stock'] == min(
+                    int(takoconfig.SEED_MONEY/takoconfig.COST_PRICE),
+                    o['quantity'])
+                assert 0 == actual['sales']
+                assert "in_stock" == actual['status']
 
     def result(self, date, sales):
         balances = {}
         expected_status = {}
-        for o in self.owner:
-            c = self.mk.condition(o['owner_id'])
-            balances[o['owner_id']] = c['balance']
+        with MarketDB() as mdb:
+            for o in self.owner:
+                c = mdb.condition(o['owner_id'])
+                balances[o['owner_id']] = c['balance']
 
-            t = self.mk.get_transaction(o['owner_id'], date)
-            assert len(t) == 1
-            expected_status[o['owner_id']] = "unknown"
-            if t[0]['status'] == 'ordered':
-                expected_status[o['owner_id']] = "canceled"
-            if t[0]['status'] == 'in_stock':
-                expected_status[o['owner_id']] = "closed"
+                t = mdb.get_transaction(o['owner_id'], date)
+                assert len(t) == 1
+                expected_status[o['owner_id']] = "unknown"
+                if t[0]['status'] == 'ordered':
+                    expected_status[o['owner_id']] = "canceled"
+                if t[0]['status'] == 'in_stock':
+                    expected_status[o['owner_id']] = "closed"
 
-        self.mk.result(date, sales)
-        for o in self.owner:
-            t = self.mk.get_transaction(o['owner_id'], date)
-            assert len(t) == 1, f"expected: 1, actual: {len(t)}"
-            actual = t[0]
-            assert actual['owner_id'] == o['owner_id']
-            stock = actual['quantity_in_stock']
-            expect = (
-                    balances[o['owner_id']]
-                    + min(sales, stock)*self.mk.selling_price
-                )
-            assert expect == actual['balance']
-            assert date == actual['date']
-            assert o['quantity'] == actual['quantity_ordered']
-            assert stock*self.mk.cost_price == actual['cost']
-            assert min(sales, stock)*self.mk.selling_price == actual['sales']
-            assert expected_status[o['owner_id']] == actual['status']
+            mdb.result(date, sales)
+            for o in self.owner:
+                t = mdb.get_transaction(o['owner_id'], date)
+                assert len(t) == 1, f"expected: 1, actual: {len(t)}"
+                actual = t[0]
+                assert actual['owner_id'] == o['owner_id']
+                stock = actual['quantity_in_stock']
+                expect = (
+                        balances[o['owner_id']]
+                        + min(sales, stock)*takoconfig.SELLING_PRICE
+                    )
+                assert expect == actual['balance']
+                assert date == actual['date']
+                assert o['quantity'] == actual['quantity_ordered']
+                assert stock*takoconfig.COST_PRICE == actual['cost']
+                assert (min(sales, stock)*takoconfig.SELLING_PRICE
+                        == actual['sales'])
+                assert expected_status[o['owner_id']] == actual['status']
 
     def cancel_and_refund(self, date):
         owner_with_cancel = []
-        for o in self.owner:
-            transactions = self.mk.get_transaction(o['owner_id'])
-            if len(transactions) == 0:
-                continue
+        with MarketDB() as mdb:
+            for o in self.owner:
+                transactions = mdb.get_transaction(o['owner_id'])
+                if len(transactions) == 0:
+                    continue
 
-            for t in transactions:
-                if t['date'] < date and t['status'] in ['in_stock', 'ordered']:
-                    owner_with_cancel.append((
-                        o['owner_id'],
-                        t['balance'],
-                        t['date'],
-                        t['cost']))
-        self.mk.cancel_and_refund(date)
-        for o in owner_with_cancel:
-            transactions = self.mk.get_transaction(o[0], o[2])
-            assert o[1] + o[3] == transactions[0]['balance']
-            assert 'canceled' == transactions[0]['status']
+                for t in transactions:
+                    if (t['date'] < date
+                            and t['status'] in ['in_stock', 'ordered']):
+                        owner_with_cancel.append((
+                            o['owner_id'],
+                            t['balance'],
+                            t['date'],
+                            t['cost']))
+            mdb.cancel_and_refund(date)
+            for o in owner_with_cancel:
+                transactions = mdb.get_transaction(o[0], o[2])
+                assert o[1] + o[3] == transactions[0]['balance']
+                assert 'canceled' == transactions[0]['status']
 
     def schedule(self, schedules):
         start_date, timeline = schedules[0]
@@ -235,6 +246,7 @@ class TakoMarketTest:
         with freezegun.freeze_time(start_datetime_jst_str) as freezer:
             #
             # control time
+            mk = TakoMarket()
             for schedule in schedules:
                 date, timeline = schedule
                 log.debug(
@@ -247,16 +259,17 @@ class TakoMarketTest:
                     freezer.move_to(now)
                     log.debug(f"---------- {now} {t[3]} ----------")
                     if t[3] == "initialize":
-                        self.mk.run_market()
+                        mk.run_market()
                         time.sleep(2)
                         continue
                     if t[3] == "shutdown":
-                        self.mk.stop_market()
+                        mk.stop_market()
                         time.sleep(2)
                         continue
                     if t[3] == "order":
-                        next_area = self.mk.get_next_area()
-                        assert next_area["date"] is not None
+                        with MarketDB() as mdb:
+                            next_area = mdb.get_next_area()
+                            assert next_area["date"] is not None
 
                         log.debug(
                             "next market is in " +
@@ -280,7 +293,7 @@ class TakoMarketTest:
                         time.sleep(2)
                     if t[3] in ("open", "close"):
                         self.show_transaction()
-            self.mk.stop_market()
+            mk.stop_market()
 
 
 class TextColor:
@@ -304,7 +317,9 @@ class TextColor:
 def tmpdb():
     global tempdir
     tempdir = tempfile.TemporaryDirectory()
-    takoconfig.TAKO_DB = str(Path(tempdir.name) / "tako_storage.db")
+    takoconfig.TAKO_DB = Path(tempdir.name, "tako_storage.db")
+    with MarketDB() as mdb:
+        mdb.create_db()
 
 
 def test_get_area_history(tmpdb):
@@ -315,14 +330,16 @@ def test_get_area_history(tmpdb):
         "1971-02-02",
         "1970-01-01",
     ]
-    tm = TakoMarket()
 
-    area_history = tm.get_area_history()
-    assert area_history is None
+    with MarketDB() as mdb:
+        area_history = mdb.get_area_history()
+    assert len(area_history) == 0
 
-    for d in date_pattern:
-        tm.set_area(d)
-    area_history = tm.get_area_history()
+    with MarketDB() as mdb:
+        for d in date_pattern:
+            mdb.set_area(d)
+    with MarketDB() as mdb:
+        area_history = mdb.get_area_history()
     assert len(area_history) == len(date_pattern)
     for h, d in zip(area_history, sorted(date_pattern, reverse=True)):
         assert h["date"] == d, f"{area_history}\n{date_pattern}"
@@ -369,8 +386,8 @@ weather_side_effect.extend([
 ]*30)
 
 
-def test_takomarket(mocker):
-    mocker.patch("tako.takomarket.TakoMarket.get_point",
+def test_takomarket(mocker, tmpdb):
+    mocker.patch("tako.takomarket.MarketDB._get_point",
                  side_effect=get_point_side_effect)
     mocker.patch("tako.takomarket.TakoMarket.weather",
                  side_effect=weather_side_effect)
@@ -463,34 +480,33 @@ def test_takomarket(mocker):
             ]),
     ]
 
-    if os.path.exists(takoconfig.TAKO_DB):
-        os.remove(takoconfig.TAKO_DB)
+    print(f"cost price: {takoconfig.COST_PRICE}")
+    print(f"selling price: {takoconfig.SELLING_PRICE}")
+    print(f"seed_money: {takoconfig.SEED_MONEY}")
 
-    s = TakoMarket()
-    print(f"cost price: {s.cost_price}")
-    print(f"selling price: {s.selling_price}")
-    print(f"seed_money: {s.seed_money}")
-
-    mktest = TakoMarketTest(s, number_of_accounts)
+    mktest = TakoMarketTest(number_of_accounts)
     print("\n# Test get_name")
     mktest.get_name()
     mktest.change_name()
 
     for case in cases:
-        s.set_area(date=case['date'])
-        print("get_area:", s.get_area())
-        print(case['date'])
+        with MarketDB() as mdb:
+            mdb.set_area(date=case['date'])
+            print("get_area:", mdb.get_area())
+            print(case['date'])
 
         print(f"\n# Case '{case['title']}'")
         print(f"\n## Cancel and refund({case['date']})")
         mktest.cancel_and_refund(case['date'])
         mktest.show_transaction()
-        print("get_area:", s.get_area(case['date']))
+        with MarketDB() as mdb:
+            print("get_area:", mdb.get_area(case['date']))
 
         print(f"\n## set_tako_quantity({case['date']})")
         mktest.set_tako_quantity(case['date'])
         mktest.show_transaction()
-        print("get_area:", s.get_area(case['date']))
+        with MarketDB() as mdb:
+            print("get_area:", mdb.get_area(case['date']))
 
         if case['making']:
             print(f"\n## Cancel and refund({case['date']})")
@@ -503,7 +519,8 @@ def test_takomarket(mocker):
         else:
             print("\n## skip making tako")
 
-        print("get_area:", s.get_area(case['date']))
+        with MarketDB() as mdb:
+            print("get_area:", mdb.get_area(case['date']))
 
         if case['selling']:
             print(f"\n## Cancel and refund({case['date']})")
@@ -517,7 +534,8 @@ def test_takomarket(mocker):
         else:
             print("\n## skip selling tako")
 
-        print("get_area:", s.get_area(case['date']))
+        with MarketDB() as mdb:
+            print("get_area:", mdb.get_area(case['date']))
 
     print("\n# Test schedule")
     mktest.schedule(schedules_jst)
@@ -545,5 +563,5 @@ def test_get_day_length_hour_today():
             assert abs(dt_hours - day_length_hour) < max_error
 
 
-if __name__ == "__main__":
-    test_takomarket()
+# if __name__ == "__main__":
+#     test_takomarket()

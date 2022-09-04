@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from typing import Optional, Dict, List, Tuple, Any
 import sqlite3
 import threading
 from datetime import datetime, timedelta, timezone
@@ -27,105 +28,130 @@ class SunriseSunsetError(Exception):
     pass
 
 
-class TakoMarket:
-    """The Tako shop
-
-    Attributes
-    ----------
-    dbfile : str
-        SQLite3 database filename.
-    cost_price : int
-        The cost of a tako
-    selling_price : int
-        The selling price of a tako
-    seed_money : int
-        The money to set up new tako shop.
-    opening_time : str
-        The opening time(JST) of market
-    closng_time : str
-        The closing time(JST) of market
-    next_event : dict
-        The next opening or closing event datetime
-        (date, opeinig_datetime, closing_datetime)
-    scheduler_state : str
-        The state of scheduler thread
-    stop : str
-        The flag of stoping scheduler thread
-    """
+class Context:
     def __init__(self):
-        """Initialize each attributes and database
-        """
-        self.dbfile = takoconfig.TAKO_DB
-        self.cost_price = takoconfig.COST_PRICE
-        self.selling_price = takoconfig.SELLING_PRICE
-        self.seed_money = takoconfig.SEED_MONEY
-        self.opening_time = takoconfig.OPENING_TIME
-        self.closing_time = takoconfig.CLOSING_TIME
-        self.next_event = None
-        self.scheduler_state = "rannable"
-        self.stop = False
+        self.conn = sqlite3.connect(takoconfig.TAKO_DB)
+        self.cur = self.conn.cursor()
+        self.nest_level = 0
 
-        with sqlite3.connect(self.dbfile) as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    tako (
-                        owner_id TEXT PRIMARY KEY,
-                        balance INTEGER,
-                        timestamp TEXT
-                    )""")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    accounts (
-                        owner_id TEXT PRIMARY KEY,
-                        name TEXT,
-                        badge INTEGER,
-                        timestamp TEXT
-                    )""")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    tako_transaction (
-                        owner_id TEXT,
-                        transaction_date TEXT,
-                        quantity_ordered INTEGER,
-                        cost INTEGER,
-                        quantity_in_stock INTEGER,
-                        sales INTEGER,
-                        status TEXT,
-                        timestamp TEXT,
-                        PRIMARY KEY (owner_id, transaction_date)
-                    )""")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    shop (
-                        date_jst TEXT PRIMARY KEY,
-                        area TEXT,
-                        opening_datetime TEXT,
-                        closing_datetime TEXT,
-                        cost_price INTEGER,
-                        selling_price INTEGER,
-                        seed_money INTEGER,
-                        status TEXT,
-                        sales INTEGER,
-                        weather TEXT,
-                        timestamp TEXT
-                    )""")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS
-                    records (
-                        date_jst TEXT,
-                        owner_id TEXT,
-                        balance INTEGER,
-                        target INTEGER,
-                        timestamp TEXT,
-                        PRIMARY KEY(date_jst, owner_id)
-                    )""")
 
-    def make_tako(self, date):
+class MarketDB:
+    """Takomarket DB
+    """
+    context: Dict[int, Dict[int, Context]] = {}
+
+    @staticmethod
+    def clear_context():
+        MarketDB.context = {}
+
+    def __init__(self, retry: int = -1):
+        self.retry = retry
+        db = id(takoconfig.TAKO_DB)
+        if not MarketDB.context.get(db):
+            MarketDB.context[db] = {}
+        th = threading.get_ident()
+        if not MarketDB.context[db].get(th):
+            MarketDB.context[db][th] = Context()
+        self.conn = MarketDB.context[db][th].conn
+        self.cur = MarketDB.context[db][th].cur
+        self.con = MarketDB.context[db][th]
+        self.db = db
+        self.th = th
+
+    def __enter__(self):
+        self.con.nest_level += 1
+        log.debug(f"enter WITH ({self.con.nest_level})")
+        if self.con.nest_level == 1:
+            retry = self.retry
+            while True:
+                try:
+                    self.cur.execute("BEGIN EXCLUSIVE")
+                    break
+                except sqlite3.OperationalError as e:
+                    if retry == 0:
+                        log.warning("give up connecting to DB")
+                        raise
+                    log.info(f"waiting for DB({retry}):\n\t{e}")
+                    retry -= 1
+                    time.sleep(5)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.con.nest_level == 1:
+            if exc_type:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+        log.debug(f"exit WITH ({self.con.nest_level})")
+        self.con.nest_level -= 1
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def commit(self):
+        self.conn.commit()
+
+    def create_db(self):
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS
+                tako (
+                    owner_id TEXT PRIMARY KEY,
+                    balance INTEGER,
+                    timestamp TEXT
+                )""")
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS
+                accounts (
+                    owner_id TEXT PRIMARY KEY,
+                    name TEXT,
+                    badge INTEGER,
+                    timestamp TEXT
+                )""")
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS
+                tako_transaction (
+                    owner_id TEXT,
+                    transaction_date TEXT,
+                    quantity_ordered INTEGER,
+                    cost INTEGER,
+                    quantity_in_stock INTEGER,
+                    sales INTEGER,
+                    status TEXT,
+                    timestamp TEXT,
+                    PRIMARY KEY (owner_id, transaction_date)
+                )""")
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS
+                shop (
+                    date_jst TEXT PRIMARY KEY,
+                    area TEXT,
+                    opening_datetime TEXT,
+                    closing_datetime TEXT,
+                    cost_price INTEGER,
+                    selling_price INTEGER,
+                    seed_money INTEGER,
+                    status TEXT,
+                    sales INTEGER,
+                    weather TEXT,
+                    timestamp TEXT
+                )""")
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS
+                records (
+                    date_jst TEXT,
+                    owner_id TEXT,
+                    balance INTEGER,
+                    target INTEGER,
+                    timestamp TEXT,
+                    PRIMARY KEY(date_jst, owner_id)
+                )""")
+
+    def make_tako(self, date: str) -> None:
         """Making tako
 
         Parameters
@@ -133,118 +159,117 @@ class TakoMarket:
         date : str
             Market date as JST.
         """
-        with sqlite3.connect(self.dbfile) as conn:
-            conn.execute(
-                """
-                UPDATE
-                    tako_transaction
-                SET
-                    cost = quantity_ordered*:cost,
-                    quantity_in_stock = quantity_ordered,
-                    status = 'in_stock',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    transaction_date = :date
-                    AND
-                    status = 'ordered'
-                    AND
-                    (
-                        SELECT
-                            balance
-                        FROM
-                            tako t
-                        WHERE
-                            t.owner_id = tako_transaction.owner_id
+        self.cur.execute(
+            """
+            UPDATE
+                tako_transaction
+            SET
+                cost = quantity_ordered*:cost,
+                quantity_in_stock = quantity_ordered,
+                status = 'in_stock',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                transaction_date = :date
+                AND
+                status = 'ordered'
+                AND
+                (
+                    SELECT
+                        balance
+                    FROM
+                        tako t
+                    WHERE
+                        t.owner_id = tako_transaction.owner_id
+                )
+                - quantity_ordered*:cost >= 0
+            """,
+            {"date": date, "cost": takoconfig.COST_PRICE})
+
+        self.cur.execute(
+            """
+            UPDATE
+                tako_transaction
+            SET
+                cost = (
+                    SELECT
+                        balance
+                    FROM
+                        tako t
+                    WHERE
+                        t.owner_id = tako_transaction.owner_id
                     )
-                    - quantity_ordered*:cost >= 0
-                """,
-                {"date": date, "cost": self.cost_price})
-
-            conn.execute(
-                """
-                UPDATE
-                    tako_transaction
-                SET
-                    cost = (
-                        SELECT
-                            balance
-                        FROM
-                            tako t
-                        WHERE
-                            t.owner_id = tako_transaction.owner_id
-                        )
-                        /:cost*:cost,
-                    quantity_in_stock = (
-                        SELECT
-                            balance
-                        FROM
-                            tako t
-                        WHERE
-                            t.owner_id = tako_transaction.owner_id
-                        )
-                        /:cost,
-                    status = 'in_stock',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    transaction_date = :date
-                    AND
-                    status = 'ordered'
-                    AND
-                    (
-                        SELECT
-                            balance
-                        FROM
-                            tako t
-                        WHERE
-                            t.owner_id = tako_transaction.owner_id
+                    /:cost*:cost,
+                quantity_in_stock = (
+                    SELECT
+                        balance
+                    FROM
+                        tako t
+                    WHERE
+                        t.owner_id = tako_transaction.owner_id
                     )
-                    - quantity_ordered*:cost < 0
-                """,
-                {"date": date, "cost": self.cost_price})
+                    /:cost,
+                status = 'in_stock',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                transaction_date = :date
+                AND
+                status = 'ordered'
+                AND
+                (
+                    SELECT
+                        balance
+                    FROM
+                        tako t
+                    WHERE
+                        t.owner_id = tako_transaction.owner_id
+                )
+                - quantity_ordered*:cost < 0
+            """,
+            {"date": date, "cost": takoconfig.COST_PRICE})
 
-            conn.execute(
-                """
-                UPDATE
-                    tako
-                SET
-                    balance = balance - (
-                        SELECT
-                            tra.cost
-                        FROM
-                            tako_transaction tra
-                        WHERE
-                            tra.owner_id = tako.owner_id
-                            AND
-                            tra.transaction_date = :date
-                        ),
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    tako.owner_id
-                    IN
-                    (
-                        SELECT
-                            tra.owner_id
-                        FROM
-                            tako_transaction tra
-                        WHERE
-                            tra.transaction_date = :date
-                    )
-                """,
-                {"date": date, "cost": self.cost_price})
+        self.cur.execute(
+            """
+            UPDATE
+                tako
+            SET
+                balance = balance - (
+                    SELECT
+                        tra.cost
+                    FROM
+                        tako_transaction tra
+                    WHERE
+                        tra.owner_id = tako.owner_id
+                        AND
+                        tra.transaction_date = :date
+                    ),
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                tako.owner_id
+                IN
+                (
+                    SELECT
+                        tra.owner_id
+                    FROM
+                        tako_transaction tra
+                    WHERE
+                        tra.transaction_date = :date
+                )
+            """,
+            {"date": date, "cost": takoconfig.COST_PRICE})
 
-            conn.execute(
-                """
-                UPDATE
-                    shop
-                SET
-                    status = 'open',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    date_jst = ?
-                """,
-                (date,))
+        self.cur.execute(
+            """
+            UPDATE
+                shop
+            SET
+                status = 'open',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                date_jst = ?
+            """,
+            (date,))
 
-    def result(self, date, max_sales):
+    def result(self, date: str, max_sales: int) -> bool:
         """Calculate total sales
 
         Parameters
@@ -258,108 +283,106 @@ class TakoMarket:
         -------
         winner_exists : bool
         """
-        with sqlite3.connect(self.dbfile) as conn:
-            conn.execute(
-                """
-                UPDATE
-                    tako_transaction
-                SET
-                    sales = min(quantity_in_stock, :sales)*:price,
-                    status = 'closed',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    transaction_date = :date
-                    AND
-                    status = 'in_stock'
-                """,
-                {"date": date,
-                 "price": self.selling_price,
-                 "sales": max_sales})
+        self.cur.execute(
+            """
+            UPDATE
+                tako_transaction
+            SET
+                sales = min(quantity_in_stock, :sales)*:price,
+                status = 'closed',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                transaction_date = :date
+                AND
+                status = 'in_stock'
+            """,
+            {"date": date,
+             "price": takoconfig.SELLING_PRICE,
+             "sales": max_sales})
 
-            conn.execute(
-                """
-                UPDATE
-                    tako
-                SET
-                    balance = balance
-                              + (
-                                 SELECT
-                                     tra.sales
-                                 FROM
-                                     tako_transaction tra
-                                 WHERE
-                                     tra.owner_id = tako.owner_id
-                                     AND
-                                     tra.transaction_date = :date
-                                ),
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    tako.owner_id
-                    IN
-                    (
-                        SELECT
-                            tra.owner_id
-                        FROM
-                            tako_transaction tra
-                        WHERE
-                            tra.transaction_date = :date
-                    )
-                """,
-                {"date": date})
-
-            conn.execute(
-                """
-                UPDATE
-                    tako_transaction
-                SET
-                    status = 'canceled',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    transaction_date = :date
-                    AND
-                    status = 'ordered'
-                """,
-                {"date": date})
-
-            conn.execute(
-                """
-                UPDATE
-                    shop
-                SET
-                    status = 'closed',
-                    sales = ?,
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    status = 'open'
-                    AND
-                    date_jst = ?
-                """,
-                (max_sales, date))
-
-            winner_exists = self.detect_winner_and_restart(conn, date)
-            if winner_exists:
-                conn.execute(
-                    """
-                    UPDATE
-                        tako_transaction
-                    SET
-                        status = 'closed_and_restart',
-                        timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+        self.cur.execute(
+            """
+            UPDATE
+                tako
+            SET
+                balance = balance
+                          + (
+                             SELECT
+                                 tra.sales
+                             FROM
+                                 tako_transaction tra
+                             WHERE
+                                 tra.owner_id = tako.owner_id
+                                 AND
+                                 tra.transaction_date = :date
+                            ),
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                tako.owner_id
+                IN
+                (
+                    SELECT
+                        tra.owner_id
+                    FROM
+                        tako_transaction tra
                     WHERE
-                        transaction_date = :date
-                        AND
-                        status = 'closed'
-                    """,
-                    {"date": date})
+                        tra.transaction_date = :date
+                )
+            """,
+            {"date": date})
 
-            return winner_exists
+        self.cur.execute(
+            """
+            UPDATE
+                tako_transaction
+            SET
+                status = 'canceled',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                transaction_date = :date
+                AND
+                status = 'ordered'
+            """,
+            {"date": date})
 
-    def detect_winner_and_restart(self, conn, date_jst):
+        self.cur.execute(
+            """
+            UPDATE
+                shop
+            SET
+                status = 'closed',
+                sales = ?,
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                status = 'open'
+                AND
+                date_jst = ?
+            """,
+            (max_sales, date))
+
+        winner_exists = self.detect_winner_and_restart(date)
+        if winner_exists:
+            self.cur.execute(
+                """
+                UPDATE
+                    tako_transaction
+                SET
+                    status = 'closed_and_restart',
+                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+                WHERE
+                    transaction_date = :date
+                    AND
+                    status = 'closed'
+                """,
+                {"date": date})
+
+        return winner_exists
+
+    def detect_winner_and_restart(self, date_jst: str) -> bool:
         """Detect winner and restart market
 
         Parameters
         ----------
-        conn : SQLite3 database
         date_jst : str
 
         Returns
@@ -367,7 +390,7 @@ class TakoMarket:
         winner_exists : bool
         """
         # detect winner
-        rows = list(conn.execute(
+        rows = list(self.cur.execute(
             """
             SELECT
                 *
@@ -380,7 +403,7 @@ class TakoMarket:
         if len(rows) == 0:
             return False
         # restart market
-        conn.execute(
+        self.cur.execute(
             """
             INSERT INTO
                 records
@@ -391,7 +414,7 @@ class TakoMarket:
                 tako
             """,
             (date_jst, takoconfig.TARGET))
-        conn.execute(
+        self.cur.execute(
             """
             UPDATE
                 tako
@@ -399,7 +422,7 @@ class TakoMarket:
                 balance = ?
             """,
             (takoconfig.SEED_MONEY,))
-        conn.execute(
+        self.cur.execute(
             """
             UPDATE
                 accounts
@@ -423,8 +446,11 @@ class TakoMarket:
             })
         return True
 
-    @staticmethod
-    def set_tako_quantity(owner_id, date, quantity):
+    def set_tako_quantity(
+            self,
+            owner_id: str,
+            date: str,
+            quantity: int) -> int:
         """Order tako
 
         Parameters
@@ -444,42 +470,41 @@ class TakoMarket:
         if quantity < 0:
             quantity = 0
 
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    status
-                FROM
-                    tako_transaction
-                WHERE
-                    owner_id = ?
-                    AND
-                    transaction_date = ?
-                """,
-                (owner_id, date))
-            for r in rows:
-                log.debug(f"{owner_id} {date} status: {r}")
-                if r[0] != 'ordered':
-                    log.warning("can't change '%s' transaction: %s, %s" %
-                                (r[0], owner_id, date))
-                    return 0
+        rows = self.cur.execute(
+            """
+            SELECT
+                status
+            FROM
+                tako_transaction
+            WHERE
+                owner_id = ?
+                AND
+                transaction_date = ?
+            """,
+            (owner_id, date))
+        for r in rows:
+            log.debug(f"{owner_id} {date} status: {r}")
+            if r[0] != 'ordered':
+                log.warning("can't change '%s' transaction: %s, %s" %
+                            (r[0], owner_id, date))
+                return 0
 
-            conn.execute(
-                """
-                REPLACE INTO
-                    tako_transaction
-                VALUES
-                    (:id, :date, :quantity, 0, 0, 0, 'ordered',
-                     strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-                """,
-                {
-                    "id": owner_id,
-                    "date": date,
-                    "quantity": quantity
-                })
+        self.cur.execute(
+            """
+            REPLACE INTO
+                tako_transaction
+            VALUES
+                (:id, :date, :quantity, 0, 0, 0, 'ordered',
+                 strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+            """,
+            {
+                "id": owner_id,
+                "date": date,
+                "quantity": quantity
+            })
         return quantity
 
-    def cancel_and_refund(self, date):
+    def cancel_and_refund(self, date: str) -> None:
         """Cancel transaction and refound
 
         Parameters
@@ -487,77 +512,79 @@ class TakoMarket:
         date : str
             Cancel all transaction before the 'date'
         """
-        with sqlite3.connect(self.dbfile) as conn:
-            # refund
-            conn.execute(
-                """
-                UPDATE
-                    tako
-                SET
-                    balance = balance + (
-                        SELECT
-                            sum(tra.cost)
-                        FROM
-                            tako_transaction tra
-                        WHERE
-                            tra.owner_id = tako.owner_id
-                            AND
-                            tra.status = 'in_stock'
-                            AND
-                            tra.transaction_date < :date
-                        ),
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    tako.owner_id
-                    IN
-                    (
-                        SELECT
-                            tra.owner_id
-                        FROM
-                            tako_transaction tra
-                        WHERE
-                            tra.owner_id = tako.owner_id
-                            AND
-                            tra.status = 'in_stock'
-                            AND
-                            tra.transaction_date < :date
-                    )
-                """,
-                {"date": date})
-            # canceled
-            conn.execute(
-                """
-                UPDATE
-                    tako_transaction
-                SET
-                    status = 'canceled',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    (
-                        status = 'in_stock'
-                        OR
-                        status = 'ordered'
-                    )
-                    AND
-                    transaction_date < :date
-                """,
-                {"date": date})
-            conn.execute(
-                """
-                UPDATE
-                    shop
-                SET
-                    status = 'canceled',
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    status <> 'closed'
-                    AND
-                    date_jst < ?
-                """,
-                (date,))
+        # refund
+        self.cur.execute(
+            """
+            UPDATE
+                tako
+            SET
+                balance = balance + (
+                    SELECT
+                        sum(tra.cost)
+                    FROM
+                        tako_transaction tra
+                    WHERE
+                        tra.owner_id = tako.owner_id
+                        AND
+                        tra.status = 'in_stock'
+                        AND
+                        tra.transaction_date < :date
+                    ),
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                tako.owner_id
+                IN
+                (
+                    SELECT
+                        tra.owner_id
+                    FROM
+                        tako_transaction tra
+                    WHERE
+                        tra.owner_id = tako.owner_id
+                        AND
+                        tra.status = 'in_stock'
+                        AND
+                        tra.transaction_date < :date
+                )
+            """,
+            {"date": date})
+        # canceled
+        self.cur.execute(
+            """
+            UPDATE
+                tako_transaction
+            SET
+                status = 'canceled',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                (
+                    status = 'in_stock'
+                    OR
+                    status = 'ordered'
+                )
+                AND
+                transaction_date < :date
+            """,
+            {"date": date})
+        self.cur.execute(
+            """
+            UPDATE
+                shop
+            SET
+                status = 'canceled',
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                status <> 'closed'
+                AND
+                date_jst < ?
+            """,
+            (date,))
 
-    @staticmethod
-    def get_records(date_jst=None, top=float("inf"), winner=True):
+    def get_records(
+            self,
+            date_jst: Optional[str] = None,
+            top: float = float("inf"),
+            winner: bool = True) -> Dict[str, List[Dict[str, Any]]]:
         """Get records
 
         Parameters
@@ -583,54 +610,52 @@ class TakoMarket:
                 ....,
             }
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            results = conn.execute(
-                """
-                SELECT
-                    r.date_jst, r.owner_id, a.name,
-                    r.balance, r.target, a.badge
-                FROM
-                    records r, accounts a
-                WHERE
-                    (
-                        r.date_jst = :date
-                    OR
-                        :date IS NULL
-                    )
-                AND
-                    r.owner_id = a.owner_id
-                AND
-                    (
-                        r.balance >= r.target
-                    OR
-                        :winner = 0
-                    )
-                """,
-                {"date": date_jst, "winner": winner})
-            results_dict = {}
-            for result in results:
-                if not results_dict.get(result[0]):
-                    results_dict[result[0]] = []
-                results_dict[result[0]].append(result[1:])
-            ret = {}
-            for date_jst in results_dict.keys():
-                r = []
-                for o in results_dict[date_jst]:
-                    c = len([u for u in results_dict[date_jst] if o[2] < u[2]])
-                    c += 1
-                    if c <= top:
-                        r.append({
-                            "name": o[1],
-                            "balance": o[2],
-                            "target": o[3],
-                            "ranking": c,
-                            "badge": o[4]
-                        })
-                ret[date_jst] = sorted(r, key=lambda x: x["ranking"])
-            return ret
+        results = self.cur.execute(
+            """
+            SELECT
+                r.date_jst, r.owner_id, a.name,
+                r.balance, r.target, a.badge
+            FROM
+                records r, accounts a
+            WHERE
+                (
+                    r.date_jst = :date
+                OR
+                    :date IS NULL
+                )
+            AND
+                r.owner_id = a.owner_id
+            AND
+                (
+                    r.balance >= r.target
+                OR
+                    :winner = 0
+                )
+            """,
+            {"date": date_jst, "winner": winner})
+        results_dict: Dict[str, List[tuple]] = {}
+        for result in results:
+            if not results_dict.get(result[0]):
+                results_dict[result[0]] = []
+            results_dict[result[0]].append(result[1:])
+        ret = {}
+        for date_jst in results_dict.keys():
+            r = []
+            for o in results_dict[date_jst]:
+                c = len([u for u in results_dict[date_jst] if o[2] < u[2]])
+                c += 1
+                if c <= top:
+                    r.append({
+                        "name": o[1],
+                        "balance": o[2],
+                        "target": o[3],
+                        "ranking": c,
+                        "badge": o[4]
+                    })
+            ret[date_jst] = sorted(r, key=lambda x: x["ranking"])
+        return ret
 
-    @staticmethod
-    def get_owner_records(owner_id):
+    def get_owner_records(self, owner_id: str) -> Dict[str, Dict[str, int]]:
         """Get records by owner
 
         Parameters
@@ -648,36 +673,37 @@ class TakoMarket:
                 ....,
             }
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                date_jst, balance, rank, target
+            FROM (
                 SELECT
-                    date_jst, balance, rank, target
-                FROM (
-                    SELECT
-                        date_jst, owner_id,
-                        balance, target,
-                        RANK() OVER(
-                            PARTITION BY date_jst
-                            ORDER BY balance DESC
-                        ) AS rank
-                    FROM
-                        records
-                )
-                WHERE
-                    owner_id = ?
-                """,
-                (owner_id,)))
+                    date_jst, owner_id,
+                    balance, target,
+                    RANK() OVER(
+                        PARTITION BY date_jst
+                        ORDER BY balance DESC
+                    ) AS rank
+                FROM
+                    records
+            )
+            WHERE
+                owner_id = ?
+            """,
+            (owner_id,)))
 
-            records = {}
-            for row in rows:
-                records[row[0]] = dict(zip(
-                    ["balance", "rank", "target"],
-                    row[1:]))
-            return records
+        records = {}
+        for row in rows:
+            records[row[0]] = dict(zip(
+                ["balance", "rank", "target"],
+                row[1:]))
+        return records
 
-    @staticmethod
-    def open_account(owner_id, name=None):
+    def open_account(
+            self,
+            owner_id: str,
+            name: Optional[str] = None) -> None:
         """Open new account
 
         Parameters
@@ -691,29 +717,27 @@ class TakoMarket:
         if not name:
             name = names.names()
 
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            conn.execute(
-                """
-                INSERT INTO
-                    accounts
-                VALUES
-                    (?, ?, ?,
-                     strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-                """,
-                (owner_id, name, 0))
+        self.cur.execute(
+            """
+            INSERT INTO
+                accounts
+            VALUES
+                (?, ?, ?,
+                 strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+            """,
+            (owner_id, name, 0))
 
-            conn.execute(
-                """
-                INSERT INTO
-                    tako
-                VALUES
-                    (?, ?,
-                     strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-                """,
-                (owner_id, takoconfig.SEED_MONEY))
+        self.cur.execute(
+            """
+            INSERT INTO
+                tako
+            VALUES
+                (?, ?,
+                 strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+            """,
+            (owner_id, takoconfig.SEED_MONEY))
 
-    @staticmethod
-    def delete_account(owner_id):
+    def delete_account(self, owner_id: str) -> Optional[str]:
         """Delete account
 
         Parameters
@@ -729,43 +753,41 @@ class TakoMarket:
         if not owner_id:
             return None
         try:
-            _ = TakoMarket.get_name(owner_id)
+            _ = self.get_name(owner_id)
         except TakoMarketNoAccountError:
             return None
 
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            conn.execute(
-                """
-                DELETE FROM
-                    records
-                WHERE
-                    owner_id = ?
-                """, (owner_id,))
-            conn.execute(
-                """
-                DELETE FROM
-                    tako_transaction
-                WHERE
-                    owner_id = ?
-                """, (owner_id,))
-            conn.execute(
-                """
-                DELETE FROM
-                    tako
-                WHERE
-                    owner_id = ?
-                """, (owner_id,))
-            conn.execute(
-                """
-                DELETE FROM
-                    accounts
-                WHERE
-                    owner_id = ?
-                """, (owner_id,))
+        self.cur.execute(
+            """
+            DELETE FROM
+                records
+            WHERE
+                owner_id = ?
+            """, (owner_id,))
+        self.cur.execute(
+            """
+            DELETE FROM
+                tako_transaction
+            WHERE
+                owner_id = ?
+            """, (owner_id,))
+        self.cur.execute(
+            """
+            DELETE FROM
+                tako
+            WHERE
+                owner_id = ?
+            """, (owner_id,))
+        self.cur.execute(
+            """
+            DELETE FROM
+                accounts
+            WHERE
+                owner_id = ?
+            """, (owner_id,))
         return owner_id
 
-    @staticmethod
-    def change_name(owner_id, name):
+    def change_name(self, owner_id: str, name: str) -> None:
         """Change the owner's display name.
 
         Parameters
@@ -778,23 +800,21 @@ class TakoMarket:
         if not name:
             raise TakoMarketError("name is None or empty.")
 
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            conn.execute(
-                """
-                UPDATE
-                    accounts
-                SET
-                    name = :name
-                WHERE
-                    owner_id = :owner_id
-                """,
-                {
-                    "owner_id": owner_id,
-                    "name": name
-                })
+        self.cur.execute(
+            """
+            UPDATE
+                accounts
+            SET
+                name = :name
+            WHERE
+                owner_id = :owner_id
+            """,
+            {
+                "owner_id": owner_id,
+                "name": name
+            })
 
-    @staticmethod
-    def condition(owner_id):
+    def condition(self, owner_id: str) -> Optional[Dict[str, Any]]:
         """Query tako with owner ID
 
         Parameters
@@ -809,17 +829,16 @@ class TakoMarket:
             The keys are 'owner_id', 'balance' and 'timestamp'.
             Retrun None in case of no owner.
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    *
-                FROM
-                    tako
-                WHERE
-                    owner_id=?
-                """,
-                (owner_id,)))
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                *
+            FROM
+                tako
+            WHERE
+                owner_id=?
+            """,
+            (owner_id,)))
 
         if len(rows) == 1:
             ret = dict(zip(
@@ -831,8 +850,7 @@ class TakoMarket:
             raise TakoMarketError(f"multiple rows: {owner_id}")
         return ret
 
-    @staticmethod
-    def condition_all():
+    def condition_all(self) -> List[Dict[str, Any]]:
         """Query tako and accounts
 
         Returns
@@ -842,23 +860,24 @@ class TakoMarket:
             Each item in the list is key/value pairs.
             The keys are 'name' and 'balance'.
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    a.name, t.balance
-                FROM
-                    tako t, accounts a
-                WHERE
-                    t.owner_id = a.owner_id
-                """
-                ))
-            all = [dict(zip(["name", "balance"], r))
-                   for r in rows]
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                a.name, t.balance
+            FROM
+                tako t, accounts a
+            WHERE
+                t.owner_id = a.owner_id
+            """
+            ))
+        all = [dict(zip(["name", "balance"], r))
+               for r in rows]
         return all
 
-    @staticmethod
-    def get_transaction(owner_id, date=None):
+    def get_transaction(
+            self,
+            owner_id: str,
+            date: Optional[str] = None) -> List[Dict[str, Any]]:
         """Query transaction and accounts
 
         Parameters
@@ -874,35 +893,34 @@ class TakoMarket:
             The list of transaction for the owner.
             Each item in the list is dict.
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    t.owner_id,
-                    a.name,
-                    t.balance,
-                    tra.transaction_date,
-                    tra.quantity_ordered,
-                    tra.cost,
-                    tra.quantity_in_stock,
-                    tra.sales,
-                    tra.status,
-                    tra.timestamp,
-                    s.area,
-                    s.sales,
-                    s.weather
-                FROM
-                    tako t
-                INNER JOIN
-                    accounts a ON t.owner_id = a.owner_id
-                INNER JOIN
-                    tako_transaction tra ON t.owner_id = tra.owner_id
-                INNER JOIN
-                    shop s ON tra.transaction_date = s.date_jst
-                WHERE
-                    t.owner_id = ?
-                """,
-                (owner_id,)))
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                t.owner_id,
+                a.name,
+                t.balance,
+                tra.transaction_date,
+                tra.quantity_ordered,
+                tra.cost,
+                tra.quantity_in_stock,
+                tra.sales,
+                tra.status,
+                tra.timestamp,
+                s.area,
+                s.sales,
+                s.weather
+            FROM
+                tako t
+            INNER JOIN
+                accounts a ON t.owner_id = a.owner_id
+            INNER JOIN
+                tako_transaction tra ON t.owner_id = tra.owner_id
+            INNER JOIN
+                shop s ON tra.transaction_date = s.date_jst
+            WHERE
+                t.owner_id = ?
+            """,
+            (owner_id,)))
 
         if date:
             ret = [dict(zip(
@@ -920,8 +938,7 @@ class TakoMarket:
                 r)) for r in rows]
         return ret
 
-    @staticmethod
-    def get_name(owner_id):
+    def get_name(self, owner_id: str) -> Tuple[str, str, int]:
         """Get the display name of the owner
 
         Parameters
@@ -931,20 +948,19 @@ class TakoMarket:
 
         Returns
         -------
-        list
-            [owner_id_str, name_str, badge_int]
+        Tuple
+            (owner_id_str, name_str, badge_int)
         """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    *
-                FROM
-                    accounts
-                WHERE
-                    owner_id=?
-                """,
-                (owner_id,)))
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                *
+            FROM
+                accounts
+            WHERE
+                owner_id=?
+            """,
+            (owner_id,)))
         if len(rows) == 0:
             raise TakoMarketNoAccountError(
                 f"account is not exist in DB: {owner_id}")
@@ -952,6 +968,365 @@ class TakoMarket:
             raise TakoMarketError(f"multiple rows: {owner_id}")
 
         return rows[0]
+
+    def _get_point(self):
+        """Get a weather observing station at random
+
+        Returns
+        -------
+        str : The name of station.
+        """
+        points = jma.Synop.point_list()
+        while True:
+            point = random.sample(points, 1)[0]
+            meta = jma.PointMeta.get_point_meta(point)
+            if not meta:
+                continue
+            if meta.get('class10s'):
+                break
+        return point
+
+    def set_area(
+            self,
+            date: Optional[str] = None,
+            tz: timezone = JST) -> None:
+        """Set a area of market if not exists
+
+        Parameters
+        ----------
+        date : str
+            The date of tako market.
+            If date is None, set tomorrow
+        tz : timezone
+            The timezone of opening_time and closing_time.
+        """
+        if not date:
+            now = datetime.now(tz) + timedelta(days=1)
+            date = now.date().isoformat()
+
+        if self.get_area(date):
+            log.warning(f"{date} already exists.")
+            return
+
+        opening_datetime_tz = datetime.fromisoformat(
+            f"{date} {takoconfig.OPENING_TIME}").replace(tzinfo=tz)
+        closing_datetime_tz = datetime.fromisoformat(
+            f"{date} {takoconfig.CLOSING_TIME}").replace(tzinfo=tz)
+
+        opening_datetime_utc_str = tt.as_utc_str(opening_datetime_tz)
+        closing_datetime_utc_str = tt.as_utc_str(closing_datetime_tz)
+        try:
+            area = self._get_point()
+        except jma.JmaError as e:
+            log.warning(f"can't get a pint of weather station: {e}")
+            return
+
+        self.cur.execute(
+            """
+            INSERT INTO
+                shop
+            VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                strftime('%Y-%m-%dT%H:%M:%f', 'now'))
+            """,
+            (
+                date,
+                area,
+                opening_datetime_utc_str,
+                closing_datetime_utc_str,
+                takoconfig.COST_PRICE,
+                takoconfig.SELLING_PRICE,
+                takoconfig.SEED_MONEY,
+                "coming_soon",
+                0,
+                ""
+            ))
+
+    def get_area(self, date: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get a area of market
+
+        Parameters
+        ----------
+        date : str
+            The date of tako market.
+            If date is None, set today.
+
+        Returns
+        -------
+        dict
+            "date",
+            "area",
+            "opening_datetime",
+            "closing_datetime",
+            "cost_price",
+            "selling_price",
+            "seed_money",
+            "status",
+            "sales",
+            "weather",
+            "timestamp"
+
+            If not exist, return None
+        """
+        if not date:
+            date = datetime.now(JST).strftime("%Y-%m-%d")
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                *
+            FROM
+                shop
+            WHERE
+                date_jst = ?
+            """,
+            (date,)))
+        if len(rows) == 1:
+            ret = dict(zip(
+                [
+                    "date",
+                    "area",
+                    "opening_datetime",
+                    "closing_datetime",
+                    "cost_price",
+                    "selling_price",
+                    "seed_money",
+                    "status",
+                    "sales",
+                    "weather",
+                    "timestamp"
+                ],
+                rows[0]))
+            ret["opening_datetime"] = datetime.fromisoformat(
+                ret["opening_datetime"]+"+00:00")
+            ret["closing_datetime"] = datetime.fromisoformat(
+                ret["closing_datetime"]+"+00:00")
+        elif len(rows) == 0:
+            ret = None
+        else:
+            raise TakoMarketError(
+                f"multiple rows in 'shop': {date}")
+        return ret
+
+    def get_area_history(self) -> List[Dict[str, Any]]:
+        """Get history of areas (descending order)
+
+        Returns
+        -------
+        list of dict
+            "date",
+            "area",
+            "opening_datetime",
+            "closing_datetime",
+            "cost_price",
+            "selling_price",
+            "seed_money",
+            "status",
+            "sales",
+            "weather",
+            "timestamp"
+        """
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                *
+            FROM
+                shop
+            ORDER BY
+                date_jst DESC
+            """))
+        if len(rows) == 0:
+            return []
+        areas = []
+        for r in rows:
+            area = dict(zip(
+                [
+                    "date",
+                    "area",
+                    "opening_datetime",
+                    "closing_datetime",
+                    "cost_price",
+                    "selling_price",
+                    "seed_money",
+                    "status",
+                    "sales",
+                    "weather",
+                    "timestamp"
+                ],
+                r))
+            area["opening_datetime"] = datetime.fromisoformat(
+                area["opening_datetime"]+"+00:00")
+            area["closing_datetime"] = datetime.fromisoformat(
+                area["closing_datetime"]+"+00:00")
+            areas.append(area)
+        return areas
+
+    def get_next_area(self) -> Dict[str, Any]:
+        """Get next area of market
+
+        Returns
+        -------
+        dict
+            "date",
+            "area",
+            "opening_datetime",
+            "closing_datetime",
+            "status",
+            "sales",
+            "weather",
+            "timestamp"
+
+            If not exist, return None
+        """
+        date = tt.clear_time(datetime.now(JST))
+        datetime_utc_str = tt.as_utc_str(date)
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                max(date_jst), area, opening_datetime, closing_datetime,
+                status, sales, weather, timestamp
+            FROM
+                shop
+            WHERE
+                date_jst >= ?
+                AND
+                status = 'coming_soon'
+            """,
+            (datetime_utc_str,)))
+
+        if len(rows) != 1:
+            raise TakoMarketError("multiple rows in 'shop': next area")
+
+        ret = dict(zip(
+            [
+                "date",
+                "area",
+                "opening_datetime",
+                "closing_datetime",
+                "status",
+                "sales",
+                "weather",
+                "timestamp"
+            ],
+            rows[0]))
+        log.debug(f"get_next_area: {ret}")
+
+        if ret["date"] is None:
+            return ret
+
+        ret["opening_datetime"] = datetime.fromisoformat(
+            ret["opening_datetime"]+"+00:00")
+        ret["closing_datetime"] = datetime.fromisoformat(
+            ret["closing_datetime"]+"+00:00")
+        return ret
+
+    def get_next_event(
+            self,
+            now: Optional[datetime] = None) -> Dict[str, Any]:
+        """Get datetime of next event
+        Before open: return today's event time
+        Open: return tommorrow
+
+        Parameters
+        ----------
+        now : datetime.datetime
+            Timezone is UTC.
+
+        Returns
+        -------
+            event datetime : dict
+                {
+                  "date" : str,
+                  "opening_datetime" : datetime
+                  "closing_datetime" : datetime
+                }
+        """
+        if now is None:
+            now = datetime.now(timezone.utc)
+        now_str = now.isoformat()
+        rows = list(self.cur.execute(
+            """
+            SELECT
+                min(date_jst), opening_datetime, closing_datetime
+            FROM
+                shop
+            WHERE
+                (
+                    datetime(opening_datetime) >= datetime(:now)
+                    AND
+                    status = 'coming_soon'
+                )
+                OR
+                (
+                    datetime(closing_datetime) >= datetime(:now)
+                    AND
+                    status = 'open'
+                )
+            """,
+            {"now": now_str}
+        ))
+        if len(rows) != 1:
+            raise TakoMarketError("multiple rows in 'shop' table: next event")
+
+        event = dict(zip([
+                    "date",
+                    "opening_datetime",
+                    "closing_datetime",
+                ],
+                rows[0]))
+
+        if event["date"] is None:
+            return event
+
+        if event["opening_datetime"]:
+            event["opening_datetime"] = datetime.fromisoformat(
+                event["opening_datetime"] + "+00:00")
+        if event["closing_datetime"]:
+            event["closing_datetime"] = datetime.fromisoformat(
+                event["closing_datetime"] + "+00:00")
+        return event
+
+    def log_weather(self, date: datetime, weather: str) -> None:
+        """Log weather
+
+        Parameters
+        ----------
+        date : datetime
+            UTC
+        weather : str
+        """
+        self.cur.execute(
+            """
+            UPDATE
+                shop
+            SET
+                weather = :weather,
+                timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
+            WHERE
+                date_jst = :date
+            """,
+            {
+                "date": date.strftime('%Y-%m-%d'),
+                "weather": weather
+            })
+
+
+class TakoMarket:
+    """The Tako shop
+
+    Attributes
+    ----------
+    scheduler_state : str
+        The state of scheduler thread
+    stop : str
+        The flag of stoping scheduler thread
+    """
+    def __init__(self):
+        """Initialize each attributes and database
+        """
+        self.scheduler_state = "rannable"
+        self.stop = False
+        with MarketDB() as mdb:
+            mdb.create_db()
 
     def schedule(self, onetime=False):
         """Do a transaction
@@ -964,60 +1339,73 @@ class TakoMarket:
         """
         open_done = False
         closed_done = False
-        self.next_event = self.get_next_event()
-        while not self.next_event["date"] and not self.stop and not onetime:
-            log.warning("next event not found")
-            self.set_area()
-            self.next_event = self.get_next_event()
-            time.sleep(30)
+        with MarketDB() as mdb:
+            next_event = mdb.get_next_event()
+            if not next_event["date"]:
+                mdb.set_area()
+                next_event = mdb.get_next_event()
+            while not next_event["date"] and not self.stop and not onetime:
+                log.warning("next event not found")
+                time.sleep(30)
+                mdb.set_area()
+                next_event = mdb.get_next_event()
 
-        self.cancel_and_refund(self.next_event["date"])
+            mdb.cancel_and_refund(next_event["date"])
 
         self.scheduler_state = "running"
         log.debug("scheduler is running.")
+        wait_sec = 0
         while not self.stop or onetime:
-            self.next_event = self.get_next_event()
-            if not self.next_event["date"]:
-                self.set_area()
-                self.next_event = self.get_next_event()
-                if not self.next_event["date"]:
-                    log.warning("next event not found")
-                    time.sleep(60)
-                    continue
-                else:
-                    log.debug(f"Next area is {self.get_next_area()['area']}")
+            time.sleep(wait_sec)
+            wait_sec = 0
+            with MarketDB() as mdb:
+                next_event = mdb.get_next_event()
+                if not next_event["date"]:
+                    mdb.set_area()
+                    next_event = mdb.get_next_event()
+                    if next_event["date"]:
+                        log.debug(
+                            f"Next area is {self.get_next_area()['area']}")
+
+            if not next_event["date"]:
+                log.warning("next event not found")
+                wait_sec = 60
+                continue
 
             now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-            if now == self.next_event["opening_datetime"]:
+            if now == next_event["opening_datetime"]:
                 if not open_done:
-                    area = self.get_area(self.next_event["date"])["area"]
-                    log.debug(f"Now open in {area}")
-                    self.cancel_and_refund(self.next_event["date"])
-                    self.make_tako(self.next_event["date"])
-                    self.set_area()
-                    log.debug(f"Next area is {self.get_next_area()['area']}")
-                    open_done = True
+                    with MarketDB() as mdb:
+                        area = mdb.get_area(next_event["date"])["area"]
+                        log.debug(f"Now open in {area}")
+                        mdb.cancel_and_refund(next_event["date"])
+                        mdb.make_tako(next_event["date"])
+                        mdb.set_area()
+                        log.debug(
+                            f"Next area is {mdb.get_next_area()['area']}")
+                        open_done = True
             else:
                 open_done = False
 
-            if now == self.next_event["closing_datetime"]:
+            if now == next_event["closing_datetime"]:
                 if not closed_done:
-                    self.cancel_and_refund(self.next_event["date"])
                     try:
                         today_sales, weather = self.total_up_sales()
                     except (jma.JmaError, SunriseSunsetError) as e:
                         log.warning(f"can't get weather data: {e}")
-                        time.sleep(15)
+                        wait_sec = 15
                         continue
 
-                    area = self.get_area(self.next_event["date"])["area"]
-                    log.debug(f"Now close in {area}")
-                    if self.result(self.next_event["date"], today_sales):
-                        log.debug("detected winner and restart market")
-                    self.log_weather(now, weather)
-                    log.debug(
-                        f"today_sales: {today_sales}, weather: {weather}")
-                    closed_done = True
+                    with MarketDB() as mdb:
+                        mdb.cancel_and_refund(next_event["date"])
+                        area = mdb.get_area(next_event["date"])["area"]
+                        log.debug(f"Now close in {area}")
+                        if mdb.result(next_event["date"], today_sales):
+                            log.debug("detected winner and restart market")
+                        mdb.log_weather(now, weather)
+                        log.debug(
+                            f"today_sales: {today_sales}, weather: {weather}")
+                        closed_done = True
             else:
                 closed_done = False
             if onetime:
@@ -1055,352 +1443,6 @@ class TakoMarket:
         signame = signal.Signals(signum).name
         log.debug(f"signal handlar received {signame}.")
         self.stop_market()
-
-    def get_point(self):
-        """Get a weather observing station at random
-
-        Returns
-        -------
-        str : The name of station.
-        """
-        points = jma.Synop.point_list()
-        while True:
-            point = random.sample(points, 1)[0]
-            meta = jma.PointMeta.get_point_meta(point)
-            if not meta:
-                continue
-            if meta.get('class10s'):
-                break
-        return point
-
-    def set_area(self, date=None, tz=JST):
-        """Set a area of market if not exists
-
-        Parameters
-        ----------
-        date : str
-            The date of tako market.
-            If date is None, set tomorrow
-        tz : timezone
-            The timezone of opening_time and closing_time.
-        """
-        if not date:
-            now = datetime.now(tz) + timedelta(days=1)
-            date = now.date()
-
-        if self.get_area(date):
-            log.warning(f"{date} already exists.")
-            return
-
-        opening_datetime_tz = datetime.fromisoformat(
-            f"{date} {self.opening_time}").replace(tzinfo=tz)
-        closing_datetime_tz = datetime.fromisoformat(
-            f"{date} {self.closing_time}").replace(tzinfo=tz)
-
-        opening_datetime_utc_str = tt.as_utc_str(opening_datetime_tz)
-        closing_datetime_utc_str = tt.as_utc_str(closing_datetime_tz)
-        try:
-            area = self.get_point()
-        except jma.JmaError as e:
-            log.warning(f"can't get a pint of weather station: {e}")
-            return
-
-        with sqlite3.connect(self.dbfile) as conn:
-            conn.execute(
-                """
-                INSERT INTO
-                    shop
-                VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    strftime('%Y-%m-%dT%H:%M:%f', 'now'))
-                """,
-                (
-                    date,
-                    area,
-                    opening_datetime_utc_str,
-                    closing_datetime_utc_str,
-                    self.cost_price,
-                    self.selling_price,
-                    self.seed_money,
-                    "coming_soon",
-                    0,
-                    ""
-                ))
-            self.next_event = self.get_next_event()
-
-    @staticmethod
-    def get_area(date=None):
-        """Get a area of market
-
-        Parameters
-        ----------
-        date : str
-            The date of tako market.
-            If date is None, set today.
-
-        Returns
-        -------
-        dict
-            "date",
-            "area",
-            "opening_datetime",
-            "closing_datetime",
-            "cost_price",
-            "selling_price",
-            "seed_money",
-            "status",
-            "sales",
-            "weather",
-            "timestamp"
-
-            If not exist, return None
-        """
-        if not date:
-            date = datetime.now(JST).strftime("%Y-%m-%d")
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    *
-                FROM
-                    shop
-                WHERE
-                    date_jst = ?
-                """,
-                (date,)))
-            if len(rows) == 1:
-                ret = dict(zip(
-                    [
-                        "date",
-                        "area",
-                        "opening_datetime",
-                        "closing_datetime",
-                        "cost_price",
-                        "selling_price",
-                        "seed_money",
-                        "status",
-                        "sales",
-                        "weather",
-                        "timestamp"
-                    ],
-                    rows[0]))
-                ret["opening_datetime"] = datetime.fromisoformat(
-                    ret["opening_datetime"]+"+00:00")
-                ret["closing_datetime"] = datetime.fromisoformat(
-                    ret["closing_datetime"]+"+00:00")
-            elif len(rows) == 0:
-                ret = None
-            else:
-                raise TakoMarketError(
-                    f"multiple rows in 'shop': {date}")
-            return ret
-
-    @staticmethod
-    def get_area_history():
-        """Get history of areas (descending order)
-
-        Returns
-        -------
-        list of dict
-            "date",
-            "area",
-            "opening_datetime",
-            "closing_datetime",
-            "cost_price",
-            "selling_price",
-            "seed_money",
-            "status",
-            "sales",
-            "weather",
-            "timestamp"
-
-            If not exist, return None
-        """
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    *
-                FROM
-                    shop
-                ORDER BY
-                    date_jst DESC
-                """))
-            if len(rows) == 0:
-                return None
-            areas = []
-            for r in rows:
-                area = dict(zip(
-                    [
-                        "date",
-                        "area",
-                        "opening_datetime",
-                        "closing_datetime",
-                        "cost_price",
-                        "selling_price",
-                        "seed_money",
-                        "status",
-                        "sales",
-                        "weather",
-                        "timestamp"
-                    ],
-                    r))
-                area["opening_datetime"] = datetime.fromisoformat(
-                    area["opening_datetime"]+"+00:00")
-                area["closing_datetime"] = datetime.fromisoformat(
-                    area["closing_datetime"]+"+00:00")
-                areas.append(area)
-            return areas
-
-    @staticmethod
-    def get_next_area():
-        """Get next area of market
-
-        Returns
-        -------
-        dict
-            "date",
-            "area",
-            "opening_datetime",
-            "closing_datetime",
-            "status",
-            "sales",
-            "weather",
-            "timestamp"
-
-            If not exist, return None
-        """
-        date = tt.clear_time(datetime.now(JST))
-        datetime_utc_str = tt.as_utc_str(date)
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    max(date_jst), area, opening_datetime, closing_datetime,
-                    status, sales, weather, timestamp
-                FROM
-                    shop
-                WHERE
-                    date_jst >= ?
-                    AND
-                    status = 'coming_soon'
-                """,
-                (datetime_utc_str,)))
-
-            if len(rows) != 1:
-                raise TakoMarketError("multiple rows in 'shop': next area")
-
-            ret = dict(zip(
-                [
-                    "date",
-                    "area",
-                    "opening_datetime",
-                    "closing_datetime",
-                    "status",
-                    "sales",
-                    "weather",
-                    "timestamp"
-                ],
-                rows[0]))
-            log.debug(f"get_next_area: {ret}")
-
-            if ret["date"] is None:
-                return ret
-
-            ret["opening_datetime"] = datetime.fromisoformat(
-                ret["opening_datetime"]+"+00:00")
-            ret["closing_datetime"] = datetime.fromisoformat(
-                ret["closing_datetime"]+"+00:00")
-            return ret
-
-    @staticmethod
-    def get_next_event(now=None):
-        """Get datetime of next event
-
-        Parameters
-        ----------
-        now : datetime.datetime
-            Timezone is UTC.
-
-        Returns
-        -------
-            event datetime : dict
-                {
-                  "date" : str,
-                  "opening_datetime" : datetime
-                  "closing_datetime" : datetime
-                }
-        """
-        if now is None:
-            now = datetime.now(timezone.utc)
-        now_str = now.isoformat()
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            rows = list(conn.execute(
-                """
-                SELECT
-                    min(date_jst), opening_datetime, closing_datetime
-                FROM
-                    shop
-                WHERE
-                    (
-                        datetime(opening_datetime) >= datetime(:now)
-                        AND
-                        status = 'coming_soon'
-                    )
-                    OR
-                    (
-                        datetime(closing_datetime) >= datetime(:now)
-                        AND
-                        status = 'open'
-                    )
-                """,
-                {"now": now_str}
-            ))
-            if len(rows) != 1:
-                raise TakoMarket("multiple rows in 'shop' table: next event")
-
-            event = dict(zip([
-                        "date",
-                        "opening_datetime",
-                        "closing_datetime",
-                    ],
-                    rows[0]))
-
-            if event["date"] is None:
-                return event
-
-            if event["opening_datetime"]:
-                event["opening_datetime"] = datetime.fromisoformat(
-                    event["opening_datetime"] + "+00:00")
-            if event["closing_datetime"]:
-                event["closing_datetime"] = datetime.fromisoformat(
-                    event["closing_datetime"] + "+00:00")
-        return event
-
-    def log_weather(self, date, weather):
-        """Log weather
-
-        Parameters
-        ----------
-        date : datetime
-            UTC
-        weather : str
-        """
-        with sqlite3.connect(self.dbfile) as conn:
-            conn.execute(
-                """
-                UPDATE
-                    shop
-                SET
-                    weather = :weather,
-                    timestamp = strftime('%Y-%m-%dT%H:%M:%f', 'now')
-                WHERE
-                    date_jst = :date
-                """,
-                {
-                    "date": date.strftime('%Y-%m-%d'),
-                    "weather": weather
-                })
 
     def total_up_sales(self):
         """Total up sales

@@ -8,7 +8,7 @@ import requests
 from threading import Event
 from typing import Dict, List, Optional, Any, Tuple
 import zulip
-from tako.takomarket import TakoMarket, TakoMarketNoAccountError
+from tako.takomarket import MarketDB, TakoMarketNoAccountError
 from tako.takoclient import TakoClient
 from tako import takoconfig, jma
 from tako.takotime import JST
@@ -98,7 +98,8 @@ class TakoZulip(TakoClient):
         Three 🦑🦑🦑
         """
         name = []
-        (_id, name, badges, *_) = TakoMarket.get_name(self.my_id)
+        with MarketDB() as mdb:
+            (_id, name, badges, *_) = mdb.get_name(self.my_id)
         badges_str = TakoClient.badge_to_emoji(badges)
         return "%s %s" % (name, badges_str)
 
@@ -117,7 +118,8 @@ class TakoZulip(TakoClient):
         New account is open.
         """
         messages = []
-        condition = TakoMarket.condition(self.my_id)
+        with MarketDB() as mdb:
+            condition = mdb.condition(self.my_id)
         if condition:
             messages.append(
                 f"Balance: {condition['balance']} JPY / "
@@ -137,7 +139,8 @@ class TakoZulip(TakoClient):
         """
         transaction = self.latest_transaction()
         if transaction:
-            market = TakoMarket.get_area(transaction["date"])
+            with MarketDB() as mdb:
+                market = mdb.get_area(transaction["date"])
             transaction_str = [
                 f"Date: {market['date']}",
                 f"Place: {market['area']}",
@@ -230,7 +233,8 @@ class TakoZulip(TakoClient):
           20% 10% 10%
         """
         messages = []
-        area = TakoMarket.get_next_area()
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
         if area["date"]:
             messages.append(f"Next: {area['area']}")
             tz = (+9, "JST")
@@ -284,8 +288,9 @@ class TakoZulip(TakoClient):
         if num == -1:
             return ["Usage: history [number]"]
 
-        transactions = TakoMarket.get_transaction(self.my_id)
-        records = TakoMarket.get_owner_records(self.my_id)
+        with MarketDB() as mdb:
+            transactions = mdb.get_transaction(self.my_id)
+            records = mdb.get_owner_records(self.my_id)
         header = ["-"*35,
                   "DATE       Place  WX",
                   "ORD STK SALES/MAX STS",
@@ -353,7 +358,8 @@ class News:
             Takoyaki Market News
         """
         texts: List[str] = []
-        news = TakoMarket.get_area_history()
+        with MarketDB() as mdb:
+            news = mdb.get_area_history()
         if news is None:
             log.debug("no news")
             return texts
@@ -436,9 +442,11 @@ class News:
                 log.debug("Old news of 'closed'")
                 return text
             closing_dt_str = jst.strftime("%Y-%m-%d %H:%M")
-            records = TakoMarket.get_records(
-                date_jst=news_source["date"],
-                winner=False)
+            with MarketDB() as mdb:
+                records = mdb.get_records(
+                    date_jst=news_source["date"],
+                    winner=False)
+                condition_all = mdb.condition_all()
             if len(records) == 0:
                 """
                 Example
@@ -460,7 +468,7 @@ class News:
                         "**Top 3 Owners**"
                         "\n")
                 ranking = sorted(
-                    TakoMarket.condition_all(),
+                    condition_all,
                     key=lambda x: x['balance'],
                     reverse=True
                 )
@@ -694,7 +702,8 @@ class TakoZulipBot:
         user_id = f"{message['sender_id']}@{self.client_id}"
         user_name = None
         try:
-            _ = TakoMarket.get_name(user_id)
+            with MarketDB() as mdb:
+                _ = mdb.get_name(user_id)
         except TakoMarketNoAccountError:
             # New user
             cmd = arg.split()
@@ -722,12 +731,13 @@ class TakoZulipBot:
             return ("If you would like to delete your Takoyaki account, "
                     "enter 'DELETE DELETE'.")
         if arg == "DELETE DELETE":
-            if TakoMarket.delete_account(user_id) == user_id:
-                log.info(f"{user_id}'s account was deleted")
-                return "Your Takoyaki account was deleted."
-            else:
-                log.warning(f"can't delete account {user_id}")
-                return "Your Takoyaki account was NOT able to be deleted."
+            with MarketDB() as mdb:
+                if mdb.delete_account(user_id) == user_id:
+                    log.info(f"{user_id}'s account was deleted")
+                    return "Your Takoyaki account was deleted."
+                else:
+                    log.warning(f"can't delete account {user_id}")
+                    return "Your Takoyaki account was NOT able to be deleted."
         # Interpret command
         tako_zulip = TakoZulip(user_id, user_name)
         msg = tako_zulip.interpret(arg)

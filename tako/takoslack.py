@@ -11,7 +11,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebhookClient
 from slack_sdk.errors import SlackApiError
 import tako
-from tako.takomarket import TakoMarket, TakoMarketNoAccountError
+from tako.takomarket import MarketDB, TakoMarketNoAccountError
 from tako import jma, takoconfig
 from tako.takoclient import TakoClient
 from tako.takotime import JST
@@ -38,7 +38,8 @@ def tako_reception(ack, say, message):
     user_id = message["user"]
     user_name = None
     try:
-        _ = TakoMarket.get_name(user_id)
+        with MarketDB() as mdb:
+            _ = mdb.get_name(user_id)
     except TakoMarketNoAccountError:
         # New user
         cmd = arg.split()
@@ -71,7 +72,9 @@ def tako_reception(ack, say, message):
             "enter 'DELETE DELETE'.")
         return
     if arg == "DELETE DELETE":
-        if TakoMarket.delete_account(user_id) == user_id:
+        with MarketDB() as mdb:
+            deleted_id = mdb.delete_account(user_id)
+        if deleted_id == user_id:
             say("Your Takoyaki account was deleted.")
             log.info(f"{user_id}'s account was deleted")
         else:
@@ -93,7 +96,9 @@ def create_home_view(user_id):
     view["blocks"] = []
 
     tako_slack = TakoSlack(user_id, None)
-    (_id, name, badges, *_) = TakoMarket.get_name(user_id)
+    with MarketDB() as mdb:
+        (_id, name, badges, *_) = mdb.get_name(user_id)
+        condition = mdb.condition(user_id)
     badges_str = TakoClient.badge_to_emoji(badges)
     view["blocks"].append({
         "type": "section",
@@ -103,7 +108,6 @@ def create_home_view(user_id):
             "emoji": True
         }
     })
-    condition = TakoMarket.condition(user_id)
     balance = condition["balance"]
     takos = int(condition["balance"]/takoconfig.COST_PRICE)
     view["blocks"].append({
@@ -131,7 +135,8 @@ def create_home_view(user_id):
     if t:
         if t["status"] == "closed_and_restart":
             date = t["date"]
-            record = TakoMarket.get_owner_records(user_id).get(date)
+            with MarketDB() as mdb:
+                record = mdb.get_owner_records(user_id).get(date)
             balance = record["balance"]
             rank = record["rank"]
             suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
@@ -300,7 +305,8 @@ def tako_home_open(client, event):
     log.debug(f"{event['user']} opened home tab.")
     user_id = event["user"]
     try:
-        _ = TakoMarket.get_name(user_id)
+        with MarketDB() as mdb:
+            _ = mdb.get_name(user_id)
         view = create_home_view(user_id)
     except TakoMarketNoAccountError:
         # New user
@@ -319,7 +325,8 @@ def input_order_modal(ack, body, client):
     log.debug(f"{body['user']['id']} opened input_order modal.")
     ack()
     user_id = body["user"]["id"]
-    condition = TakoMarket.condition(user_id)
+    with MarketDB() as mdb:
+        condition = mdb.condition(user_id)
     balance = condition["balance"]
     takos = int(balance/takoconfig.COST_PRICE)
     max_sales = takoconfig.MAX_SALES["sunny"] + takoconfig.MAX_SALES["cloudy"]
@@ -377,7 +384,8 @@ def input_order_modal(ack, body, client):
 @slack_app.view("order_result")
 def order_result(ack, body, client, view):
     user_id = body["user"]["id"]
-    condition = TakoMarket.condition(user_id)
+    with MarketDB() as mdb:
+        condition = mdb.condition(user_id)
     balance = condition["balance"]
     max_sales = takoconfig.MAX_SALES["sunny"] + takoconfig.MAX_SALES["cloudy"]
     takos = min(int(balance/takoconfig.COST_PRICE), max_sales)
@@ -617,7 +625,8 @@ class TakoSlack(TakoClient):
         Three 🦑🦑🦑
         """
         name = []
-        (_id, name, badges, *_) = TakoMarket.get_name(self.my_id)
+        with MarketDB() as mdb:
+            (_id, name, badges, *_) = mdb.get_name(self.my_id)
         badges_str = TakoClient.badge_to_emoji(badges)
         return "%s %s" % (name, badges_str)
 
@@ -636,7 +645,8 @@ class TakoSlack(TakoClient):
         New account is open.
         """
         message = []
-        condition = TakoMarket.condition(self.my_id)
+        with MarketDB() as mdb:
+            condition = mdb.condition(self.my_id)
         if condition:
             message.append(
                 f"Balance: {condition['balance']} JPY / "
@@ -656,7 +666,8 @@ class TakoSlack(TakoClient):
         """
         transaction = self.latest_transaction()
         if transaction:
-            market = TakoMarket.get_area(transaction["date"])
+            with MarketDB() as mdb:
+                market = mdb.get_area(transaction["date"])
             transaction_str = [
                 f"Date: {market['date']}",
                 f"Place: {market['area']}",
@@ -688,8 +699,9 @@ class TakoSlack(TakoClient):
         125 125   125/500 closed
         -----------------------------------
         """
-        transactions = TakoMarket.get_transaction(self.my_id)
-        records = TakoMarket.get_owner_records(self.my_id)
+        with MarketDB() as mdb:
+            transactions = mdb.get_transaction(self.my_id)
+            records = mdb.get_owner_records(self.my_id)
         header = ["-"*35,
                   "DATE       Place  WX",
                   "ORD STK SALES/MAX STS",
@@ -806,7 +818,8 @@ class TakoSlack(TakoClient):
           20% 10% 10%
         """
         messages = []
-        area = TakoMarket.get_next_area()
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
         if area["date"]:
             messages.append(f"Next: {area['area']}")
             tz = (+9, "JST")
@@ -843,7 +856,8 @@ class TakoSlack(TakoClient):
         """
         next_place = []
         forecast = []
-        area = TakoMarket.get_next_area()
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
         if area["date"]:
             next_place.append(f"Place: {area['area']}")
             tz = (+9, "JST")
@@ -918,7 +932,8 @@ class News:
             Takoyaki Market News
         """
         texts = []
-        news = TakoMarket.get_area_history()
+        with MarketDB() as mdb:
+            news = mdb.get_area_history()
         if news is None:
             log.debug("no news")
             return texts
@@ -997,9 +1012,11 @@ class News:
                 log.debug("Old news of 'closed'")
                 return text
             closing_dt_str = jst.strftime("%Y-%m-%d %H:%M")
-            records = TakoMarket.get_records(
-                date_jst=news_source["date"],
-                winner=False)
+            with MarketDB() as mdb:
+                records = mdb.get_records(
+                    date_jst=news_source["date"],
+                    winner=False)
+                condition_all = mdb.condition_all()
             if len(records) == 0:
                 """
                 Example
@@ -1021,7 +1038,7 @@ class News:
                         "Top 3 Owners"
                         "\n")
                 ranking = sorted(
-                    TakoMarket.condition_all(),
+                    condition_all,
                     key=lambda x: x['balance'],
                     reverse=True
                 )

@@ -4,11 +4,12 @@ import pytest
 import os
 import re
 import sys
+from pathlib import Path
 from io import StringIO
 from datetime import datetime, timedelta
 from tako.takoclient import TakoClient
 from tako import takoconfig
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tests.takodebug import DebugClient
 
 my_id = "MSN-02"
@@ -18,24 +19,30 @@ my_name = "ZEONG"
 @pytest.mark.freeze_time("1970-01-01")
 @pytest.fixture
 def db():
-    takoconfig.TAKO_DB = "test_takoclient.db"
+    takoconfig.TAKO_DB = Path("test_takoclient.db")
     if os.path.exists(takoconfig.TAKO_DB):
         os.remove(takoconfig.TAKO_DB)
-    tm = TakoMarket()  # create new database
-    tm.set_area()
+    with MarketDB() as mdb:
+        mdb.create_db()
+        mdb.set_area()
     yield
     os.remove(takoconfig.TAKO_DB)
+    MarketDB.clear_context()
 
 
 def test_init(db):
     _ = TakoClient("11111", "")
-    assert TakoMarket.get_name("11111")[1] != ""  # at random
+    with MarketDB() as mdb:
+        assert mdb.get_name("11111")[1] != ""  # at random
     _ = TakoClient("11111", "aaaaa")
-    assert TakoMarket.get_name("11111")[1] == "aaaaa"
+    with MarketDB() as mdb:
+        assert mdb.get_name("11111")[1] == "aaaaa"
     _ = TakoClient("11111", "bbbbb")
-    assert TakoMarket.get_name("11111")[1] == "bbbbb"
+    with MarketDB() as mdb:
+        assert mdb.get_name("11111")[1] == "bbbbb"
     _ = TakoClient("11111", "")
-    assert TakoMarket.get_name("11111")[1] == "bbbbb"
+    with MarketDB() as mdb:
+        assert mdb.get_name("11111")[1] == "bbbbb"
 
 
 def test_astimezone(db):
@@ -121,9 +128,13 @@ def test_order_and_latest_transaction(db):
 
 
 def test_takocommand():
-    takoconfig.TAKO_DB = "test_takoclient.db"
+    takoconfig.TAKO_DB = Path("test_takoclient.db")
     if os.path.exists(takoconfig.TAKO_DB):
         os.remove(takoconfig.TAKO_DB)
+
+    with MarketDB() as mdb:
+        mdb.create_db()
+
     command = [
         "125", "dooo",
         "156", "dooo",

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sqlite3
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako import takoconfig
 from pathlib import Path
 import os
@@ -130,14 +130,15 @@ class TestRecords:
         if Path.exists(takoconfig.TAKO_DB):
             os.remove(takoconfig.TAKO_DB)
 
-        tm = TakoMarket()
+        with MarketDB() as mdb:
+            mdb.create_db()
         n = 10
         self.initialize_db(n, func=self.balances_ap)
         date_jst = ["2021-01-01", "2021-09-09"]
 
         takoconfig.TARGET = 30000
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            res = tm.detect_winner_and_restart(conn, date_jst[0])
+        with MarketDB() as mdb:
+            res = mdb.detect_winner_and_restart(date_jst[0])
         assert res is True
         if res:
             owners = self.table2dict("tako")
@@ -157,8 +158,8 @@ class TestRecords:
                 assert b["owner_id"] == self.id_name(e)[0]
 
         self.set_balance(n, func=self.balances_mod)
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            res = tm.detect_winner_and_restart(conn, date_jst[1])
+        with MarketDB() as mdb:
+            res = mdb.detect_winner_and_restart(date_jst[1])
         assert res is True
         # self.show_table("records")
         parameters = [
@@ -174,7 +175,8 @@ class TestRecords:
              (1, 0, 6)),
         ]
         for param, expected in parameters:
-            actual = TakoMarket.get_records(**param)
+            with MarketDB() as mdb:
+                actual = mdb.get_records(**param)
             assert len(actual) == expected[0]
             assert len(actual.get(date_jst[0], [])) == expected[1]
             assert len(actual.get(date_jst[1], [])) == expected[2], f"{param}"
@@ -200,7 +202,8 @@ class TestRecords:
         accounts = self.table2dict("accounts")
         assert len(accounts) == len(parameters)
         for owner_id in parameters:
-            records = TakoMarket.get_owner_records(owner_id)
+            with MarketDB() as mdb:
+                records = mdb.get_owner_records(owner_id)
             expected = parameters[owner_id]
             for date_jst in expected:
                 actual = records[date_jst]

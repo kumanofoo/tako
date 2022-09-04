@@ -5,7 +5,7 @@ import time
 import logging
 import signal
 from datetime import datetime, timezone
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako.takoclient import TakoClient
 from tako import takoconfig
 from tako.takoconfig import TAKOBOT
@@ -76,28 +76,29 @@ class Takobot(TakoClient):
         self.bot_state = "running"
         log.debug("Tako Bot is running.")
         while not self.stop.is_set():
-            next_area = TakoMarket.get_next_area()
-            opening_time = next_area["opening_datetime"]
-            if opening_time is None:
-                opening_time = datetime.fromtimestamp(0, timezone.utc)
-            market_status = next_area["status"]
-            now = datetime.now(JST)
-            if opening_time > now and market_status == "coming_soon":
-                order = min(
-                    self.how_many_order(),
-                    self.max_order_quantity()[0])
-                TakoMarket.set_tako_quantity(
-                    self.my_id,
-                    next_area["date"],
-                    order)
-                log.debug(
-                    f"ordered {order} takos for the market "
-                    f"in {next_area['area']} "
-                    f"on {opening_time.astimezone(JST).strftime('%Y-%d-%m')}")
-                wait = min((opening_time - now).seconds, 30*60)
-            else:
-                wait = 60*60
-                log.debug("no next market")
+            with MarketDB() as mdb:
+                next_area = mdb.get_next_area()
+                opening_time = next_area["opening_datetime"]
+                if opening_time is None:
+                    opening_time = datetime.fromtimestamp(0, timezone.utc)
+                market_status = next_area["status"]
+                now = datetime.now(JST)
+                if opening_time > now and market_status == "coming_soon":
+                    order = min(
+                        self.how_many_order(),
+                        self.max_order_quantity()[0])
+                    mdb.set_tako_quantity(
+                        self.my_id,
+                        next_area["date"],
+                        order)
+                    log.debug(
+                        f"ordered {order} takos for the market "
+                        f"in {next_area['area']} on "
+                        f"{opening_time.astimezone(JST).strftime('%Y-%m-%d')}")
+                    wait = min((opening_time - now).seconds, 30*60)
+                else:
+                    wait = 60*60
+                    log.debug("no next market")
             log.debug(f"set wake up timer for {int(wait/60)} minutes...")
             self.stop.wait(wait)
 

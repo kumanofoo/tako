@@ -5,7 +5,7 @@ from pathlib import Path
 import sqlite3
 from unittest.mock import MagicMock
 import freezegun
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako.takoclient import TakoCommand
 from tako import takoconfig
 
@@ -74,20 +74,21 @@ class DebugMarket:
         self.owners = []
         self.freezetime = None
 
-        TakoMarket.get_point = MagicMock(
+        MarketDB._get_point = MagicMock(
             side_effect=self.mock_get_point)
         TakoCommand.get_weather_forecast = mock_get_weather_forecast
 
         with freezegun.freeze_time(f"{self.date_jst}T00:00:00+09:00"):
-            self.tm = TakoMarket()
-            self.tm.set_area()
-            for i in range(owner_num):
-                owner_id = f"id{i+10000}"
-                try:
-                    self.tm.open_account(owner_id, name=f"name{i+10000}")
-                except sqlite3.IntegrityError:
-                    pass
-                self.owners.append(owner_id)
+            with MarketDB() as mdb:
+                mdb.create_db()
+                mdb.set_area()
+                for i in range(owner_num):
+                    owner_id = f"id{i+10000}"
+                    try:
+                        mdb.open_account(owner_id, name=f"name{i+10000}")
+                    except sqlite3.IntegrityError:
+                        pass
+                    self.owners.append(owner_id)
 
     def mock_get_point(self):
         self.area_code += 1
@@ -98,11 +99,12 @@ class DebugMarket:
         quantities : list
             ordering quantity of each owner
         """
-        for n, quantity in enumerate(quantities):
-            TakoMarket.set_tako_quantity(
-                self.owners[n],
-                self.date_jst,
-                quantity)
+        with MarketDB() as mdb:
+            for n, quantity in enumerate(quantities):
+                mdb.set_tako_quantity(
+                    self.owners[n],
+                    self.date_jst,
+                    quantity)
 
     def next_day(self):
         """Advance time by one day
@@ -120,9 +122,10 @@ class DebugMarket:
             Opening time
         """
         with freezegun.freeze_time(f"{self.date_jst} {time}:00+09:00"):
-            self.tm.cancel_and_refund(self.date_jst)
-            self.tm.make_tako(self.date_jst)
-            self.tm.set_area()
+            with MarketDB() as mdb:
+                mdb.cancel_and_refund(self.date_jst)
+                mdb.make_tako(self.date_jst)
+                mdb.set_area()
         self.time_jst = time
 
     def close(self, time="18:00", sales=SALES):
@@ -134,8 +137,9 @@ class DebugMarket:
             Closing time
         """
         with freezegun.freeze_time(f"{self.date_jst} {time}:00+09:00"):
-            self.tm.cancel_and_refund(self.date_jst)
-            self.tm.result(self.date_jst, sales)
+            with MarketDB() as mdb:
+                mdb.cancel_and_refund(self.date_jst)
+                mdb.result(self.date_jst, sales)
         self.time_jst = time
 
     def freeze(self):

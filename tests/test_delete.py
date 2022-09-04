@@ -2,7 +2,7 @@
 
 import sqlite3
 from tako import takoconfig
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako.takoclient import TakoCommand
 from tests.takodebug import DebugMarket
 from pathlib import Path
@@ -56,14 +56,16 @@ class TestDelete:
                 actual = self.count_table_records(table, o.my_id)
                 assert actual == expected, f"{o.my_id} in '{table}'"
 
-        actual = TakoMarket.delete_account("")
-        assert actual is None
-        actual = TakoMarket.delete_account("unknown_owner_id")
-        assert actual is None
+        with MarketDB() as mdb:
+            actual = mdb.delete_account("")
+            assert actual is None
+            actual = mdb.delete_account("unknown_owner_id")
+            assert actual is None
 
         for o in owners:
-            actual = TakoMarket.delete_account(o.my_id)
-            assert actual == o.my_id
+            with MarketDB() as mdb:
+                actual = mdb.delete_account(o.my_id)
+                assert actual == o.my_id
             for table, _, expected in TABLES:
                 actual = self.count_table_records(table, o.my_id)
                 assert actual == 0, f"{o.my_id} in '{table}' is not zero."
