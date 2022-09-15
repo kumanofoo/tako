@@ -60,7 +60,6 @@ class MarketDB:
 
     def __enter__(self):
         self.con.nest_level += 1
-        log.debug(f"enter WITH ({self.con.nest_level})")
         if self.con.nest_level == 1:
             retry = self.retry
             while True:
@@ -82,7 +81,6 @@ class MarketDB:
                 self.conn.rollback()
             else:
                 self.conn.commit()
-        log.debug(f"exit WITH ({self.con.nest_level})")
         self.con.nest_level -= 1
 
     def rollback(self):
@@ -1515,7 +1513,8 @@ class TakoMarket:
                       }
                       Return None if can't get SYNOP weather data.
         """
-        self.today_point = self.get_area()["area"]
+        with MarketDB() as mdb:
+            self.today_point = mdb.get_area()["area"]
         now = jma.Synop.synopday(point=self.today_point)
         point = now['data'][self.today_point]
         sunshine = float(point['sunshine']['duration']['value'])

@@ -624,8 +624,8 @@ class TakoZulipBot:
                     if (res.get("code") == "BAD_EVENT_QUEUE_ID" or
                             res["msg"].startswith("Bad event queue id:")):
                         queue_id = None
-                    time.sleep(1)
-                    continue
+                time.sleep(2)
+                continue
             for event in res["events"]:
                 last_event_id = max(last_event_id, int(event["id"]))
                 if event["type"] == "message":
