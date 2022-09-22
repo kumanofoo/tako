@@ -77,7 +77,7 @@ tako[125]:
 ```Shell
 $ pip install .
 ```
-You can use commands: `takomarket`, `takocmd`, `takobot`, `takoslackbot` and `takoserver`.
+You can use commands: `takomarket`, `takocmd`, `takobot`, `takoslackbot`, `takozulipbot` and `takoserver`.
 
 ### Installation with test (Option)
 ```Shell
@@ -86,7 +86,7 @@ $ pip install .[dev]
 
 ### Takoyaki Service for linux (Option)
 ```
-$ sudo bash install.sh install
+$ sudo bash installer.sh install
 ```
 
 ## Configuration
@@ -157,7 +157,7 @@ export ZULIP_TAKO_STREAM="general:Takoyaki News"
 ```
 
 ## Commands
-<img alt="Takoyaki Commands" src="./img/tako.svg">
+<img alt="Takoyaki Commands" src="./img/tako.drawio.svg">
 
 ### `takomarket`
 Run a takoyaki market server.
@@ -208,7 +208,7 @@ $ export ZULIP_EMAIL=xxxxx@yyyyy.zulipchat.com
 $ export ZULIP_API_KEY=AbCdEfGhIjKlMnOpQrStUvWxYZ012345
 $ export ZULIP_SITE=https://yyyyy.zulipchat.com
 $ export ZULIP_TAKO_STREAM="general:Takoyaki News"
-$ takoslackbot
+$ takozulipbot
 ```
 
 ### `takocmd`
