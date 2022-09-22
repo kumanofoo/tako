@@ -100,7 +100,7 @@ initialize_docker() {
         -c "mkdir -p /tmp/takoserver && tar zxf /tmp/files.tar.gz -C /tmp/takoserver"
 
     # exec installer in container
-    docker exec ${docker_container} /bin/bash -c "cd /tmp/takoserver && /bin/bash install.sh install"
+    docker exec ${docker_container} /bin/bash -c "cd /tmp/takoserver && /bin/bash installer.sh install"
 }
 
 test_on_docker() {
