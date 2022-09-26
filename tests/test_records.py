@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sqlite3
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako import takoconfig
 from pathlib import Path
 import os
@@ -130,14 +130,15 @@ class TestRecords:
         if Path.exists(takoconfig.TAKO_DB):
             os.remove(takoconfig.TAKO_DB)
 
-        tm = TakoMarket()
+        with MarketDB() as mdb:
+            mdb.create_db()
         n = 10
         self.initialize_db(n, func=self.balances_ap)
         date_jst = ["2021-01-01", "2021-09-09"]
 
         takoconfig.TARGET = 30000
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            res = tm.detect_winner_and_restart(conn, date_jst[0])
+        with MarketDB() as mdb:
+            res = mdb.detect_winner_and_restart(date_jst[0])
         assert res is True
         if res:
             owners = self.table2dict("tako")
@@ -157,10 +158,10 @@ class TestRecords:
                 assert b["owner_id"] == self.id_name(e)[0]
 
         self.set_balance(n, func=self.balances_mod)
-        with sqlite3.connect(takoconfig.TAKO_DB) as conn:
-            res = tm.detect_winner_and_restart(conn, date_jst[1])
+        with MarketDB() as mdb:
+            res = mdb.detect_winner_and_restart(date_jst[1])
         assert res is True
-        # show_table("records")
+        # self.show_table("records")
         parameters = [
             ({"date_jst": None, "top": float("inf"), "winner": True},
              (2, 5, 6)),
@@ -174,10 +175,40 @@ class TestRecords:
              (1, 0, 6)),
         ]
         for param, expected in parameters:
-            actual = TakoMarket.get_records(**param)
+            with MarketDB() as mdb:
+                actual = mdb.get_records(**param)
             assert len(actual) == expected[0]
             assert len(actual.get(date_jst[0], [])) == expected[1]
             assert len(actual.get(date_jst[1], [])) == expected[2], f"{param}"
+
+        # test get_owner_records
+        parameters = {}
+        owner_ids = [self.id_name(n)[0] for n in range(10)]
+        balances1 = [self.balances_ap(n) for n in range(10)]
+        balances2 = [self.balances_mod(n) for n in range(10)]
+        rank1 = sorted(balances1)
+        rank2 = sorted(balances2)
+        rank1.reverse()
+        rank2.reverse()
+
+        for n in range(10):
+            owner_id = owner_ids[n]
+            parameters[owner_id] = {}
+            r1 = rank1.index(balances1[n]) + 1
+            r2 = rank2.index(balances2[n]) + 1
+            parameters[owner_id]["2021-01-01"] = (balances1[n], r1)
+            parameters[owner_id]["2021-09-09"] = (balances2[n], r2)
+
+        accounts = self.table2dict("accounts")
+        assert len(accounts) == len(parameters)
+        for owner_id in parameters:
+            with MarketDB() as mdb:
+                records = mdb.get_owner_records(owner_id)
+            expected = parameters[owner_id]
+            for date_jst in expected:
+                actual = records[date_jst]
+                assert actual["balance"] == expected[date_jst][0]
+                assert actual["rank"] == expected[date_jst][1]
 
         os.remove(takoconfig.TAKO_DB)
 

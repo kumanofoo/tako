@@ -1,0 +1,72 @@
+display_information:
+  name: TAKO
+  description: Takoyaki Shop
+  background_color: "#2c2d30"
+  long_description: "You will run a takoyaki shop.\r
+
+    You are given 5000 yen at the start.\r
+
+    Its goal is to make 30000 yen faster than other shops.\r
+
+    When someone reaches 30000 yen,\r
+
+    the series of markets are once closed.\r
+
+    And then it is reset to 5000 yen and new market starts.\r
+
+    \r
+
+    The cost of one takoyaki is 40 yen and the selling price is 50 yen.\r
+
+    The number of takoyakis sold in a day depends on the weather.\r
+
+    About 500 takoyakis would sell on a sunny day.\r
+
+    About 300 on a cloudy day, and about 100 on a rainy or snowy day.\r
+
+    So you should look carefully at the weather forecast\r
+
+    for the next day before making up your mind\r
+
+    about how many you will make.\r
+
+    Takoyaki does not last long, so all unsold takoyakis are discarded.\r
+
+    \r
+
+    The place of the market is changed every day and\r
+
+    the next is announced at 9:00 a.m.\r
+
+    The takoyaki market opens at 9:00 a.m. every day.\r
+
+    By the opening time, you need to decide how many takoyakis to make.\r
+
+    Please remember to check the weather forecast.\r
+
+    It closes at 6:00 p.m. and the sales are calculated."
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: false
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: TAKO
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - im:history
+      - incoming-webhook
+      - users:read
+      - chat:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_home_opened
+      - message.im
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

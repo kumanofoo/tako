@@ -1,9 +1,11 @@
 #! /usr/bin/env python3
+
+from pathlib import Path
 import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 import argparse
-from tako.takomarket import TakoMarket
+from tako.takomarket import MarketDB
 from tako import jma, takoconfig
 
 log = logging.getLogger(__name__)
@@ -37,13 +39,17 @@ class TakoClient:
         ---------------------------------------------
         """
         try:
-            TakoMarket.open_account(self.my_id, self.my_name)
+            with MarketDB() as mdb:
+                mdb.open_account(self.my_id, self.my_name)
             log.debug(f"Create new account '{self.my_id}'.")
         except sqlite3.IntegrityError:
             # ID already exists
-            if self.my_name:
-                TakoMarket.change_name(self.my_id, self.my_name)
-                log.debug(f"{self.my_id} already exists")
+            with MarketDB() as mdb:
+                if self.my_name:
+                    mdb.change_name(self.my_id, self.my_name)
+                    log.debug(f"{self.my_id} already exists")
+                else:
+                    self.my_name = mdb.get_name(self.my_id)[1]
 
     def astimezone(self, datetime_utc, tz=(+9, "JST")):
         """Convert datetime as UTC to string with timezone
@@ -74,7 +80,8 @@ class TakoClient:
         -------
         (quantity, balance) : (int, int)
         """
-        condition = TakoMarket.condition(self.my_id)
+        with MarketDB() as mdb:
+            condition = mdb.condition(self.my_id)
         balance = None
         if condition:
             balance = condition["balance"]
@@ -89,11 +96,12 @@ class TakoClient:
         conditions : [{"name": str, "balance": int},...]
             The name is owner's nickname.
         """
-        condition_all = sorted(
-            TakoMarket.condition_all(),
-            key=lambda x: x['balance'],
-            reverse=True
-        )
+        with MarketDB() as mdb:
+            condition_all = sorted(
+                mdb.condition_all(),
+                key=lambda x: x['balance'],
+                reverse=True
+            )
         return condition_all
 
     def get_forecast_in_next_area(self):
@@ -115,7 +123,8 @@ class TakoClient:
                       [(time, Probability of Precipitation),...]
             }
         """
-        area = TakoMarket.get_next_area()
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
         if not area["date"]:
             return None
 
@@ -145,7 +154,8 @@ class TakoClient:
                 "weather": str,
             }
         """
-        transactions = TakoMarket.get_transaction(self.my_id)
+        with MarketDB() as mdb:
+            transactions = mdb.get_transaction(self.my_id)
         if not transactions:
             return None
         return sorted(transactions, key=lambda x: x["date"], reverse=True)[0]
@@ -161,13 +171,14 @@ class TakoClient:
         -------
         result : bool
         """
-        area = TakoMarket.get_next_area()
-        if area["date"]:
-            TakoMarket.set_tako_quantity(self.my_id, area["date"], quantity)
-            return True
-        else:
-            log.warning("Next market is not found.")
-            return False
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
+            if area["date"]:
+                mdb.set_tako_quantity(self.my_id, area["date"], quantity)
+                return True
+            else:
+                log.warning("Next market is not found.")
+                return False
 
     @staticmethod
     def badge_to_emoji(badge):
@@ -216,8 +227,23 @@ class TakoCommand(TakoClient):
             if quantity >= 0 and quantity <= max_quantity:
                 if self.order(quantity):
                     response.append(f"Ordered {quantity} tako")
-        elif cmd == "history":
-            response.extend(self.history())
+        elif cmd.startswith("history"):
+            c = cmd.split()
+            if len(c) > 1:
+                if c[1] == "all":
+                    num = None
+                else:
+                    try:
+                        num = int(c[1])
+                    except ValueError:
+                        log.debug(f"Invalid history number: '{c[1]}'")
+                        num = -1
+            else:
+                num = takoconfig.HISTORY_COUNT
+            if num == -1:
+                response.append("Usage: history [number]")
+            else:
+                response.extend(self.history(number=num))
         elif cmd == "help" or cmd == "?":
             response.extend(self.help())
         elif cmd == "quit":
@@ -240,7 +266,8 @@ class TakoCommand(TakoClient):
         Three 🦑🦑🦑
         """
         name = []
-        (_id, name, badges, *_) = TakoMarket.get_name(self.my_id)
+        with MarketDB() as mdb:
+            (_id, name, badges, *_) = mdb.get_name(self.my_id)
         badges_str = TakoClient.badge_to_emoji(badges)
         return "%s %s" % (name, badges_str)
 
@@ -256,7 +283,8 @@ class TakoCommand(TakoClient):
         Balance: 5000 JPY at 2021-10-10 12:22 JST
         """
         texts = []
-        condition = TakoMarket.condition(self.my_id)
+        with MarketDB() as mdb:
+            condition = mdb.condition(self.my_id)
         if condition:
             ts_str = self.astimezone(
                 condition["timestamp"],
@@ -295,7 +323,8 @@ class TakoCommand(TakoClient):
         texts.append(f"Status: closed '{transaction['date']}'"
                      f" with {transaction['sales']} JPY sales"
                      f" at {ts_str}")
-        market = TakoMarket.get_area(transaction["date"])
+        with MarketDB() as mdb:
+            market = mdb.get_area(transaction["date"])
         sales_q = int(transaction["sales"]/market["selling_price"])
         ordered_q = transaction["quantity_ordered"]
         in_stock_q = transaction["quantity_in_stock"]
@@ -347,6 +376,8 @@ class TakoCommand(TakoClient):
         Example
         -------
         This season is over. And next season has begun.
+        You were 3rd with 31000 JPY.
+
         One : 35000 JPY
          ⭐🦑🐙
         Two : 33000 JPY\n"
@@ -357,15 +388,22 @@ class TakoCommand(TakoClient):
         The following is the close to the target.
         Four : 29000 JPY
          🦑🦑🦑🦑🦑🦑🦑🦑🦑🐙🐙🐙🐙🐙🐙🐙🐙🐙
-
         Five : 29000 JPY
         """
         texts = []
         texts.append("This season is over. And next season has begun.")
-        balance = -float("inf")
-        records = TakoMarket.get_records(
-            date_jst=transaction["date"],
-            winner=False)
+        date = transaction["date"]
+        with MarketDB() as mdb:
+            owner_record = mdb.get_owner_records(self.my_id)[date]
+            balance = owner_record["balance"]
+            rank = owner_record["rank"]
+            suffix = {1: "st🐙", 2: "nd", 3: "rd"}.get(rank, "th")
+            texts.append(f"You were {rank}{suffix} with {balance} JPY.")
+            texts.append("")
+            balance = -float("inf")
+            records = mdb.get_records(
+                date_jst=transaction["date"],
+                winner=False)
         for r in records[transaction["date"]]:
             if r["balance"] < r["target"]:
                 if balance > r["balance"]:
@@ -430,12 +468,14 @@ class TakoCommand(TakoClient):
         2022-01-22 帯広　　             100        0     0/0     ordered
         ------------------------------------------------------------------
         """
+        with MarketDB() as mdb:
+            transactions = mdb.get_transaction(self.my_id)
+            records = mdb.get_owner_records(self.my_id)
+        header = ["Date       Area     weather "
+                  "Ordered In stock Sales/max   Status  ",
+                  "-"*66]
         texts = []
-        transactions = TakoMarket.get_transaction(self.my_id)
-
-        texts.append("Date       Area     weather "
-                     "Ordered In stock Sales/max   Status  ")
-        texts.append("-"*66)
+        texts.extend(header)
         for n, t in enumerate(sorted(transactions,
                               key=lambda x: x["date"],
                               reverse=reverse)):
@@ -451,6 +491,14 @@ class TakoCommand(TakoClient):
                 t['sales']/takoconfig.SELLING_PRICE,
                 t['max_sales'],
                 t['status']))
+
+            if t['status'] == "closed_and_restart":
+                record = records[t['date']]
+                rank = record['rank']
+                suffix = {1: "st", 2: "nd", 3: "rd"}.get(rank, "th")
+                balance = record['balance']
+                texts.append(
+                    " "*11 + f"You were {rank}{suffix} with {balance} JPY.")
         texts.append("-"*66)
         return texts
 
@@ -536,7 +584,8 @@ class TakoCommand(TakoClient):
         20% 10% 10%
         """
         texts = []
-        area = TakoMarket.get_next_area()
+        with MarketDB() as mdb:
+            area = mdb.get_next_area()
         if area["date"]:
             texts.append("")
             texts.append(f"Next: {area['area']}")
@@ -574,9 +623,14 @@ class TakoCommand(TakoClient):
 def takocmd():
     global my_id, my_name
 
+    if not Path.exists(Path(takoconfig.TAKO_DB)):
+        print(f"{takoconfig.TAKO_DB}: No such database")
+        exit(1)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--id",  help="Owner ID")
     parser.add_argument("-n", "--name",  help="Owner name")
+    parser.add_argument("--delete",  help="Delete owner")
     args = parser.parse_args()
 
     if args.id:
@@ -584,6 +638,17 @@ def takocmd():
 
     if args.name:
         my_name = args.name
+
+    if args.delete:
+        with MarketDB() as mdb:
+            result = mdb.delete_account(args.delete)
+        if result == args.delete:
+            pass
+        elif result is None:
+            print(f"{args.delete} is not found")
+        else:
+            print("Somthing is wrong.")
+        exit(0)
 
     tc = TakoCommand(my_id, my_name)
     print(f"ID: {tc.my_id}, Display name: {tc.my_name}")

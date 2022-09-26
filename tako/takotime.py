@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 
+from typing import Optional
 from datetime import datetime, timedelta, time, timezone
 
 
@@ -9,7 +10,9 @@ UTC = timezone.utc
 
 class TakoTime:
     @staticmethod
-    def date_with_tz(date_str=None, utc_offset=0):
+    def date_with_tz(
+            date_str: Optional[str] = None,
+            utc_offset: int = 0) -> datetime:
         """Transform string date into datetime as JST
 
         Parameters
@@ -36,7 +39,7 @@ class TakoTime:
         return date_tz
 
     @staticmethod
-    def as_utc_str(dt):
+    def as_utc_str(dt: datetime) -> Optional[str]:
         """Get datetime as UTC string
 
         Parameters
@@ -55,7 +58,8 @@ class TakoTime:
         utc_str = utc.strftime("%Y-%m-%dT%H:%M:%S")
         return utc_str
 
-    def clear_time(date):
+    @staticmethod
+    def clear_time(date: datetime) -> datetime:
         """Clear time part of datetime
 
         Parameters

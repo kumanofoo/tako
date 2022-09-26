@@ -1,5 +1,9 @@
 import pytest
+import os
 from datetime import datetime, timezone, timedelta
+import zulip
+from tako.takozulip import TakoZulipBot, TakoZulipError, News
+
 UTC = timezone.utc
 JST = timezone(timedelta(hours=+9))
 
@@ -70,13 +74,14 @@ check_market_parameters = [
 ]
 
 
-@pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
-                    "os.environ.get('SLACK_BOT_TOKEN') is None",
-                    reason="Need environment variables of Slack")
+@pytest.mark.skipif("os.environ.get('ZULIP_EMAIL') is None",
+                    "os.environ.get('ZULIP_API_KEY') is None",
+                    "os.environ.get('ZULIP_SITE') is None",
+                    "os.environ.get('ZULIP_TAKO_STREAM') is None",
+                    reason="Need environment variables of Zulip")
 @pytest.mark.parametrize("param, init, expected", check_market_parameters)
 def test_check_market(mocker, param, init, expected):
-    from tako.takoslack import News
-    create_text_mock = mocker.patch("tako.takoslack.News.create_text")
+    create_text_mock = mocker.patch("tako.takozulip.News.create_text")
     area_history = parameter_maker(param)
     mocker.patch(
         "tako.takomarket.MarketDB.get_area_history",
@@ -102,7 +107,7 @@ publish_parameters = [
     (("2021-10-10", "Apple", "closed", 500, "Sunny"), False,
      "Market is closed in Apple at 2021-10-10 09:00.\n"
      "Max sales: 500 Weather: Sunny\n"
-     "Top 3 Owners\n"
+     "**Top 3 Owners**\n"
      "  Four: 5000 JPY\n"
      "  Three: 3000 JPY\n"
      "  Two: 2000 JPY\n"),
@@ -171,14 +176,14 @@ get_records_closed_and_restart = {
 }
 
 
-@pytest.mark.skipif("os.environ.get('SLACK_APP_TOKEN') is None",
-                    "os.environ.get('SLACK_BOT_TOKEN') is None",
-                    "os.environ.get('SLACK_WEBHOOK_URL') is None",
-                    reason="Need environment variables of Slack")
+@pytest.mark.skipif("os.environ.get('ZULIP_EMAIL') is None",
+                    "os.environ.get('ZULIP_API_KEY') is None",
+                    "os.environ.get('ZULIP_SITE') is None",
+                    "os.environ.get('ZULIP_TAKO_STREAM') is None",
+                    reason="Need environment variables of Zulip")
 @pytest.mark.freeze_time(datetime(2021, 10, 10, tzinfo=JST))
 @pytest.mark.parametrize("param, restart, expected", publish_parameters)
 def test_create_text(mocker, param, restart, expected):
-    from tako.takoslack import News
     condition_all = [
         {"name": "Three", "balance": 3000},
         {"name": "One", "balance": 1000},
@@ -200,3 +205,27 @@ def test_create_text(mocker, param, restart, expected):
     area = parameter_maker([param])
     actual = news.create_text(area[0])
     assert actual == expected, f"{actual}"
+
+
+environ_parameters = [
+    ("ZULIP_EMAIL", zulip.ConfigNotFoundError),
+    ("ZULIP_API_KEY", zulip.ConfigNotFoundError),
+    ("ZULIP_SITE", zulip.MissingURLError),
+    ("ZULIP_TAKO_STREAM", TakoZulipError)
+]
+
+
+@pytest.mark.skipif("os.environ.get('ZULIP_EMAIL') is None",
+                    "os.environ.get('ZULIP_API_KEY') is None",
+                    "os.environ.get('ZULIP_SITE') is None",
+                    "os.environ.get('ZULIP_TAKO_STREAM') is None",
+                    reason="Need environment variables of Zulip")
+@pytest.mark.parametrize("env, ex", environ_parameters)
+def test_environmet_variables(env, ex):
+    assert TakoZulipBot.check_environment_variables() is True
+    temp = os.environ[env]
+    del os.environ[env]
+    assert TakoZulipBot.check_environment_variables() is False
+    with pytest.raises(ex):
+        _ = TakoZulipBot()
+    os.environ[env] = temp
