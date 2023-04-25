@@ -1363,7 +1363,7 @@ class TakoMarket:
                     next_event = mdb.get_next_event()
                     if next_event["date"]:
                         log.debug(
-                            f"Next area is {self.get_next_area()['area']}")
+                            f"Next area is {mdb.get_next_area()['area']}")
 
             if not next_event["date"]:
                 log.warning("next event not found")
